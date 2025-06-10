@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Review - AIE Map</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+        .nav {
+            background-color: #34495e;
+            padding: 0.5rem;
+            text-align: center;
+        }
+        .nav a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            margin: 0 0.5rem;
+            background-color: #3498db;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .nav a:hover {
+            background-color: #2980b9;
+        }
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .upload-section {
+            background: white;
+            border-radius: 10px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .upload-section h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: #34495e;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        .form-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .form-row {
+            display: flex;
+            gap: 1rem;
+        }
+        .form-row .form-group {
+            flex: 1;
+        }
+        .btn {
+            background-color: #3498db;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .btn-secondary {
+            background-color: #95a5a6;
+        }
+        .btn-secondary:hover {
+            background-color: #7f8c8d;
+        }
+        .file-upload {
+            border: 2px dashed #bdc3c7;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            transition: border-color 0.3s;
+        }
+        .file-upload:hover {
+            border-color: #3498db;
+        }
+        .file-upload.dragover {
+            border-color: #3498db;
+            background-color: #ecf0f1;
+        }
+        .extracted-info {
+            background-color: #e8f5e8;
+            border: 1px solid #c3e6c3;
+            border-radius: 5px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        .extracted-info h3 {
+            margin-top: 0;
+            color: #27ae60;
+        }
+        .info-item {
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+            background-color: white;
+            border-radius: 3px;
+        }
+        .info-item strong {
+            color: #2c3e50;
+        }
+        .alert {
+            padding: 1rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .autocomplete-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 5px 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        .autocomplete-suggestion {
+            padding: 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+        .autocomplete-suggestion:hover {
+            background-color: #f8f9fa;
+        }
+        .autocomplete-suggestion:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Upload Review</h1>
+    </div>
+    
+    <div class="nav">
+        <a href="/">Map</a>
+        <a href="/upload">Upload Review</a>
+    </div>
+
+    <div class="container">
+        <div class="upload-section">
+            <h2>Upload Screenshot</h2>
+            <p>Upload a screenshot of a book review and we'll automatically extract the information.</p>
+            
+            <div class="file-upload" id="fileUpload">
+                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                <p>Click to select a screenshot or drag and drop here</p>
+                <p style="color: #7f8c8d; font-size: 0.9rem;">Supports: JPG, PNG, GIF</p>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing screenshot...</p>
+            </div>
+            
+            <div id="extractedInfo" style="display: none;">
+                <div class="extracted-info">
+                    <h3>Extracted Information</h3>
+                    <div id="extractedContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <h2>Review Details</h2>
+            <form id="reviewForm">
+                <div class="form-group">
+                    <label for="book">Book *</label>
+                    <select id="book" name="book_id" required>
+                        <option value="">Select a book</option>
+                        {% for book in books %}
+                        <option value="{{ book.id }}">{{ book.title }}</option>
+                        {% endfor %}
+                        <option value="both">Both Books (AIE + DMLS)</option>
+                    </select>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="city">City *</label>
+                        <div class="autocomplete-container">
+                            <input type="text" id="city" name="city_name" required placeholder="Start typing city name..." autocomplete="off">
+                            <div class="autocomplete-suggestions" id="citySuggestions"></div>
+                        </div>
+                        <small style="color: #7f8c8d;">All cities worldwide supported. Start typing to see suggestions or enter any city name.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="country">Country *</label>
+                        <div class="autocomplete-container">
+                            <input type="text" id="country" name="country" required placeholder="Start typing country name..." autocomplete="off">
+                            <div class="autocomplete-suggestions" id="countrySuggestions"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="reviewText">Review Text</label>
+                    <textarea id="reviewText" name="review_text" placeholder="Enter the review content..."></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reviewerName">Reviewer Name</label>
+                        <input type="text" id="reviewerName" name="reviewer_name" placeholder="e.g., John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label for="company">Company</label>
+                        <input type="text" id="company" name="company" placeholder="e.g., Google">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="role">Role</label>
+                        <input type="text" id="role" name="role" placeholder="e.g., Data Scientist">
+                    </div>
+                    <div class="form-group">
+                        <label for="source">Source</label>
+                        <input type="text" id="source" name="source" placeholder="e.g., GoodReads, LinkedIn">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reviewDate">Review Date</label>
+                        <input type="date" id="reviewDate" name="review_date">
+                    </div>
+                    <div class="form-group">
+                        <label for="originalUrl">Original Post URL</label>
+                        <input type="url" id="originalUrl" name="original_post_url" placeholder="https://...">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="socialMediaUrl">Reviewer's Social Media Profile</label>
+                    <input type="url" id="socialMediaUrl" name="social_media_url" placeholder="https://linkedin.com/in/...">
+                </div>
+                
+                <button type="submit" class="btn">Submit Review</button>
+                <button type="button" class="btn btn-secondary" onclick="resetForm()">Reset</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const fileUpload = document.getElementById('fileUpload');
+        const fileInput = document.getElementById('fileInput');
+        const loading = document.getElementById('loading');
+        const extractedInfo = document.getElementById('extractedInfo');
+        const extractedContent = document.getElementById('extractedContent');
+        const reviewForm = document.getElementById('reviewForm');
+        
+        // Autocomplete functionality
+        function setupAutocomplete(inputElement, suggestionsElement, apiEndpoint) {
+            let debounceTimer;
+            
+            inputElement.addEventListener('input', (e) => {
+                const query = e.target.value;
+                
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(async () => {
+                    if (query.length < 2) {
+                        suggestionsElement.style.display = 'none';
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch(`${apiEndpoint}?q=${encodeURIComponent(query)}`);
+                        const suggestions = await response.json();
+                        
+                        if (suggestions.length > 0) {
+                            suggestionsElement.innerHTML = suggestions.map(suggestion => {
+                                const displayText = suggestion.full_name || suggestion;
+                                return `<div class="autocomplete-suggestion" data-value="${suggestion.city || suggestion}" data-country="${suggestion.country || ''}">${displayText}</div>`;
+                            }).join('');
+                            suggestionsElement.style.display = 'block';
+                        } else {
+                            suggestionsElement.style.display = 'none';
+                        }
+                    } catch (error) {
+                        console.error('Autocomplete error:', error);
+                        suggestionsElement.style.display = 'none';
+                    }
+                }, 300);
+            });
+            
+            suggestionsElement.addEventListener('click', (e) => {
+                if (e.target.classList.contains('autocomplete-suggestion')) {
+                    const value = e.target.getAttribute('data-value');
+                    const country = e.target.getAttribute('data-country');
+                    
+                    inputElement.value = value;
+                    suggestionsElement.style.display = 'none';
+                    
+                    // If this is a city selection, also fill in the country
+                    if (country && inputElement.id === 'city') {
+                        document.getElementById('country').value = country;
+                    }
+                }
+            });
+            
+            // Hide suggestions when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!inputElement.contains(e.target) && !suggestionsElement.contains(e.target)) {
+                    suggestionsElement.style.display = 'none';
+                }
+            });
+        }
+        
+        // Setup autocomplete for city and country fields
+        setupAutocomplete(
+            document.getElementById('city'),
+            document.getElementById('citySuggestions'),
+            '/api/cities/suggestions'
+        );
+        
+        setupAutocomplete(
+            document.getElementById('country'),
+            document.getElementById('countrySuggestions'),
+            '/api/countries/suggestions'
+        );
+
+        // File upload handlers
+        fileUpload.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        
+        fileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUpload.classList.add('dragover');
+        });
+        
+        fileUpload.addEventListener('dragleave', () => {
+            fileUpload.classList.remove('dragover');
+        });
+        
+        fileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        });
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                processFile(file);
+            }
+        }
+
+        async function processFile(file) {
+            loading.style.display = 'block';
+            extractedInfo.style.display = 'none';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/upload-screenshot', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                displayExtractedInfo(result.extracted_info);
+                populateForm(result.extracted_info);
+                
+            } catch (error) {
+                console.error('Error processing file:', error);
+                alert('Error processing screenshot. Please try again.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function displayExtractedInfo(info) {
+            let content = '';
+            
+            if (info.book_detected) {
+                content += `<div class="info-item"><strong>Book Detected:</strong> ${info.book_detected}</div>`;
+            }
+            if (info.reviewer_name) {
+                content += `<div class="info-item"><strong>Reviewer:</strong> ${info.reviewer_name}</div>`;
+            }
+            if (info.company) {
+                content += `<div class="info-item"><strong>Company:</strong> ${info.company}</div>`;
+            }
+            if (info.role) {
+                content += `<div class="info-item"><strong>Role:</strong> ${info.role}</div>`;
+            }
+            if (info.source) {
+                content += `<div class="info-item"><strong>Source:</strong> ${info.source}</div>`;
+            }
+            if (info.review_text) {
+                content += `<div class="info-item"><strong>Review Text:</strong> ${info.review_text.substring(0, 200)}${info.review_text.length > 200 ? '...' : ''}</div>`;
+            }
+            
+            if (content) {
+                extractedContent.innerHTML = content;
+                extractedInfo.style.display = 'block';
+            }
+        }
+
+        function populateForm(info) {
+            if (info.book_detected) {
+                const bookSelect = document.getElementById('book');
+                for (let option of bookSelect.options) {
+                    if (option.text.includes(info.book_detected === 'AIE' ? 'AI Engineering' : 'Designing Machine Learning')) {
+                        option.selected = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (info.reviewer_name) {
+                document.getElementById('reviewerName').value = info.reviewer_name;
+            }
+            if (info.company) {
+                document.getElementById('company').value = info.company;
+            }
+            if (info.role) {
+                document.getElementById('role').value = info.role;
+            }
+            if (info.source) {
+                document.getElementById('source').value = info.source;
+            }
+            if (info.review_text) {
+                document.getElementById('reviewText').value = info.review_text;
+            }
+        }
+
+        // Form submission
+        reviewForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(reviewForm);
+            const data = Object.fromEntries(formData);
+            
+            try {
+                let reviews_created = 0;
+                
+                if (data.book_id === 'both') {
+                    // Create two separate reviews for both books
+                    const bookIds = [1, 2]; // AIE and DMLS
+                    
+                    for (const bookId of bookIds) {
+                        const reviewData = { ...data, book_id: bookId };
+                        delete reviewData.book_id; // Remove the 'both' value
+                        reviewData.book_id = bookId;
+                        
+                        const response = await fetch('/api/reviews', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(reviewData)
+                        });
+                        
+                        if (response.ok) {
+                            reviews_created++;
+                        } else {
+                            const error = await response.json();
+                            alert(`Error creating review for book ${bookId}: ${error.detail || 'Failed to submit review'}`);
+                            return;
+                        }
+                    }
+                    
+                    if (reviews_created === 2) {
+                        alert('Reviews for both books submitted successfully!');
+                        resetForm();
+                    }
+                } else {
+                    // Single book review
+                    const response = await fetch('/api/reviews', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    
+                    if (response.ok) {
+                        alert('Review submitted successfully!');
+                        resetForm();
+                    } else {
+                        const error = await response.json();
+                        alert(`Error: ${error.detail || 'Failed to submit review'}`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error submitting review:', error);
+                alert('Error submitting review. Please try again.');
+            }
+        });
+
+        function resetForm() {
+            reviewForm.reset();
+            extractedInfo.style.display = 'none';
+            fileInput.value = '';
+        }
+    </script>
+</body>
+</html>
