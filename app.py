@@ -112,17 +112,6 @@ async def get_country_suggestions_api(q: str = ""):
         return []
     return get_country_suggestions(q, limit=20)
 
-@app.get("/api/cities")
-async def get_all_cities():
-    """Get all valid cities"""
-    cities = []
-    for city, data in VALID_CITIES.items():
-        cities.append({
-            "city": city,
-            "country": data["country"],
-            "full_name": f"{city}, {data['country']}"
-        })
-    return sorted(cities, key=lambda x: x["full_name"])
 
 @app.get("/api/countries")
 async def get_all_countries_api():
@@ -216,32 +205,6 @@ async def get_city_reviews(city_name: str, country: str, db: Session = Depends(g
     
     return result
 
-def geocode_city(city_name: str, country: str) -> Optional[tuple]:
-    """Get coordinates for a city - first check predefined list, then fallback to API"""
-    # First try predefined locations
-    coords = get_coordinates(city_name, country)
-    if coords:
-        return coords
-    
-    # Fallback to Nominatim API for custom locations (but validate first)
-    if not validate_location(city_name, country):
-        return None
-        
-    try:
-        url = "https://nominatim.openstreetmap.org/search"
-        params = {
-            "q": f"{city_name}, {country}",
-            "format": "json",
-            "limit": 1
-        }
-        response = requests.get(url, params=params, headers={"User-Agent": "AIE-Map/1.0"})
-        data = response.json()
-        
-        if data:
-            return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception as e:
-        print(f"Geocoding error: {e}")
-    return None
 
 def get_or_create_city(db: Session, city_name: str, country: str) -> City:
     """Get existing city or create new one with comprehensive geocoding"""
