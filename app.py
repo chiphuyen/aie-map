@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from starlette.requests import Request
 from models import Base, Book, City, Review, ReviewAsset, ReviewCreate, ReviewResponse, CityStats
 from comprehensive_location_data import validate_location, get_coordinates, get_city_suggestions, get_country_suggestions, get_all_countries
-from typing import List, Optional
+from typing import List, Optional, Union
 import os
 import json
 from datetime import datetime, date
@@ -120,29 +120,29 @@ async def get_all_countries_api():
 
 @app.get("/api/map-data")
 async def get_map_data(db: Session = Depends(get_db)):
-    """Get aggregated review data for map display"""
+    """Get separate review data for each book type per city"""
     
     # Debug: Check total reviews and cities
     total_reviews = db.query(Review).count()
     total_cities = db.query(City).count()
     print(f"DEBUG: Total reviews: {total_reviews}, Total cities: {total_cities}")
     
-    from sqlalchemy import case
-    
+    # Query to get separate entries for each book type per city
     query = db.query(
         City.name,
         City.country, 
         City.latitude,
         City.longitude,
-        func.sum(case((Book.short_name == 'AIE', 1), else_=0)).label('aie_count'),
-        func.sum(case((Book.short_name == 'DMLS', 1), else_=0)).label('dmls_count'),
-        func.count(Review.id).label('total_count')
+        Book.short_name,
+        Book.title,
+        Book.pin_color,
+        func.count(Review.id).label('review_count')
     ).join(Review, City.id == Review.city_id)\
      .join(Book, Review.book_id == Book.id)\
-     .group_by(City.id)
+     .group_by(City.id, Book.id)
     
     result = query.all()
-    print(f"DEBUG: Map data query returned {len(result)} cities")
+    print(f"DEBUG: Map data query returned {len(result)} city-book combinations")
     
     map_data = [
         {
@@ -150,15 +150,143 @@ async def get_map_data(db: Session = Depends(get_db)):
             "country": row.country,
             "latitude": float(row.latitude),
             "longitude": float(row.longitude),
-            "aie_count": row.aie_count,
-            "dmls_count": row.dmls_count,
-            "total_count": row.total_count
+            "book_short_name": row.short_name,
+            "book_title": row.title,
+            "pin_color": row.pin_color,
+            "review_count": row.review_count
         }
         for row in result
     ]
     
     print(f"DEBUG: Returning map data: {map_data}")
     return map_data
+
+@app.get("/api/reviews/filtered")
+async def get_filtered_reviews(
+    request: Request,
+    book_id: Union[int, None] = None,
+    city: Union[str, None] = None, 
+    country: Union[str, None] = None,
+    company: Union[str, None] = None,
+    db: Session = Depends(get_db)
+):
+    """Get reviews with combined filters"""
+    print(f"DEBUG: Received params - book_id: {book_id}, city: {city}, country: {country}, company: {company}")
+    
+    # Start with base query
+    query = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
+              .join(City, Review.city_id == City.id)
+    
+    # Apply filters cumulatively
+    active_filters = []
+    
+    if book_id:
+        query = query.filter(Review.book_id == book_id)
+        book = db.query(Book).filter(Book.id == book_id).first()
+        if book:
+            active_filters.append(f"Book: {book.title}")
+    
+    if city and country:
+        query = query.filter(City.name == city, City.country == country)
+        active_filters.append(f"Location: {city}, {country}")
+    elif city:
+        query = query.filter(City.name == city)
+        active_filters.append(f"City: {city}")
+    elif country:
+        query = query.filter(City.country == country)
+        active_filters.append(f"Country: {country}")
+    
+    if company:
+        query = query.filter(Review.company.ilike(f"%{company}%"))
+        active_filters.append(f"Company: {company}")
+    
+    # Execute query
+    reviews = query.all()
+    
+    # Format results
+    result = []
+    for review, book, city_obj in reviews:
+        # Get assets for this review
+        assets = db.query(ReviewAsset).filter(ReviewAsset.review_id == review.id).all()
+        
+        result.append({
+            "id": review.id,
+            "book_title": book.title,
+            "book_short_name": book.short_name,
+            "city_name": city_obj.name,
+            "country": city_obj.country,
+            "review_text": review.review_text,
+            "reviewer_name": review.reviewer_name,
+            "company": review.company,
+            "role": review.role,
+            "review_date": review.review_date.isoformat() if review.review_date else None,
+            "created_at": review.created_at,
+            "original_post_url": review.original_post_url,
+            "social_media_url": review.social_media_url,
+            "source": review.source,
+            "assets": [
+                {
+                    "id": asset.id,
+                    "file_path": asset.file_path,
+                    "file_name": asset.file_name,
+                    "file_type": asset.file_type,
+                    "file_size": asset.file_size,
+                    "created_at": asset.created_at
+                }
+                for asset in assets
+            ]
+        })
+    
+    return {
+        "filters": {
+            "book_id": book_id,
+            "city": city,
+            "country": country,
+            "company": company,
+            "active_filters": active_filters
+        },
+        "reviews": result,
+        "total_count": len(result)
+    }
+
+@app.get("/api/autocomplete/cities")
+async def get_autocomplete_cities(query: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get cities for autocomplete based on reviews in database"""
+    # Get distinct cities from reviews
+    cities_query = db.query(City.name, City.country).join(Review).distinct()
+    
+    if query:
+        cities_query = cities_query.filter(City.name.ilike(f"%{query}%"))
+    
+    cities = cities_query.order_by(City.name).all()
+    
+    return [{"name": city.name, "country": city.country, "label": f"{city.name}, {city.country}"} for city in cities]
+
+@app.get("/api/autocomplete/countries")
+async def get_autocomplete_countries(query: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get countries for autocomplete based on reviews in database"""
+    # Get distinct countries from reviews
+    countries_query = db.query(City.country).join(Review).distinct()
+    
+    if query:
+        countries_query = countries_query.filter(City.country.ilike(f"%{query}%"))
+    
+    countries = countries_query.order_by(City.country).all()
+    
+    return [{"name": country[0], "label": country[0]} for country in countries]
+
+@app.get("/api/autocomplete/companies")
+async def get_autocomplete_companies(query: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get companies for autocomplete based on reviews in database"""
+    # Get distinct companies from reviews
+    companies_query = db.query(Review.company).filter(Review.company.isnot(None)).distinct()
+    
+    if query:
+        companies_query = companies_query.filter(Review.company.ilike(f"%{query}%"))
+    
+    companies = companies_query.order_by(Review.company).all()
+    
+    return [{"name": company[0], "label": company[0]} for company in companies if company[0]]
 
 @app.get("/api/reviews/{city_name}")
 async def get_city_reviews(city_name: str, country: str, db: Session = Depends(get_db)):
@@ -395,6 +523,215 @@ async def upload_screenshot(
         "file_path": file_path,
         "extracted_info": extracted_info
     }
+
+@app.get("/api/reviews/by-book/{book_id}")
+async def get_reviews_by_book(book_id: int, db: Session = Depends(get_db)):
+    """Get all reviews for a specific book"""
+    book = db.query(Book).filter(Book.id == book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    reviews = db.query(Review, City).join(City, Review.city_id == City.id)\
+                .filter(Review.book_id == book_id).all()
+    
+    result = []
+    for review, city in reviews:
+        # Get assets for this review
+        assets = db.query(ReviewAsset).filter(ReviewAsset.review_id == review.id).all()
+        
+        result.append({
+            "id": review.id,
+            "book_title": book.title,
+            "book_short_name": book.short_name,
+            "city_name": city.name,
+            "country": city.country,
+            "review_text": review.review_text,
+            "reviewer_name": review.reviewer_name,
+            "company": review.company,
+            "role": review.role,
+            "review_date": review.review_date.isoformat() if review.review_date else None,
+            "created_at": review.created_at,
+            "original_post_url": review.original_post_url,
+            "social_media_url": review.social_media_url,
+            "source": review.source,
+            "assets": [
+                {
+                    "id": asset.id,
+                    "file_path": asset.file_path,
+                    "file_name": asset.file_name,
+                    "file_type": asset.file_type,
+                    "file_size": asset.file_size,
+                    "created_at": asset.created_at
+                }
+                for asset in assets
+            ]
+        })
+    
+    return {
+        "book": {
+            "id": book.id,
+            "title": book.title,
+            "short_name": book.short_name,
+            "pin_color": book.pin_color
+        },
+        "reviews": result,
+        "total_count": len(result)
+    }
+
+@app.get("/api/reviews/by-location")
+async def get_reviews_by_location(city: Optional[str] = None, country: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get all reviews for a specific city/country or country only"""
+    if not city and not country:
+        raise HTTPException(status_code=400, detail="Either city or country must be provided")
+    
+    # If both city and country are provided, filter by specific city
+    if city and country:
+        city_obj = db.query(City).filter(City.name == city, City.country == country).first()
+        if not city_obj:
+            raise HTTPException(status_code=404, detail="City not found")
+        
+        reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
+                    .join(City, Review.city_id == City.id)\
+                    .filter(Review.city_id == city_obj.id).all()
+        
+        location_info = {
+            "type": "city",
+            "city": city_obj.name,
+            "country": city_obj.country,
+            "latitude": float(city_obj.latitude),
+            "longitude": float(city_obj.longitude)
+        }
+    
+    # If only country is provided, filter by country
+    elif country:
+        reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
+                    .join(City, Review.city_id == City.id)\
+                    .filter(City.country == country).all()
+        
+        if not reviews:
+            raise HTTPException(status_code=404, detail="No reviews found for this country")
+        
+        location_info = {
+            "type": "country",
+            "country": country
+        }
+    
+    # If only city is provided (any country), filter by city name
+    else:  # city but no country
+        reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
+                    .join(City, Review.city_id == City.id)\
+                    .filter(City.name == city).all()
+        
+        if not reviews:
+            raise HTTPException(status_code=404, detail="No reviews found for this city")
+        
+        location_info = {
+            "type": "city_global",
+            "city": city
+        }
+    
+    result = []
+    for review, book, city_obj in reviews:
+        # Get assets for this review
+        assets = db.query(ReviewAsset).filter(ReviewAsset.review_id == review.id).all()
+        
+        result.append({
+            "id": review.id,
+            "book_title": book.title,
+            "book_short_name": book.short_name,
+            "city_name": city_obj.name,
+            "country": city_obj.country,
+            "review_text": review.review_text,
+            "reviewer_name": review.reviewer_name,
+            "company": review.company,
+            "role": review.role,
+            "review_date": review.review_date.isoformat() if review.review_date else None,
+            "created_at": review.created_at,
+            "original_post_url": review.original_post_url,
+            "social_media_url": review.social_media_url,
+            "source": review.source,
+            "assets": [
+                {
+                    "id": asset.id,
+                    "file_path": asset.file_path,
+                    "file_name": asset.file_name,
+                    "file_type": asset.file_type,
+                    "file_size": asset.file_size,
+                    "created_at": asset.created_at
+                }
+                for asset in assets
+            ]
+        })
+    
+    return {
+        "location": location_info,
+        "reviews": result,
+        "total_count": len(result)
+    }
+
+@app.get("/api/reviews/by-company/{company_name}")
+async def get_reviews_by_company(company_name: str, db: Session = Depends(get_db)):
+    """Get all reviews for a specific company"""
+    reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
+                .join(City, Review.city_id == City.id)\
+                .filter(Review.company.ilike(f"%{company_name}%")).all()
+    
+    if not reviews:
+        raise HTTPException(status_code=404, detail="No reviews found for this company")
+    
+    result = []
+    for review, book, city in reviews:
+        # Get assets for this review
+        assets = db.query(ReviewAsset).filter(ReviewAsset.review_id == review.id).all()
+        
+        result.append({
+            "id": review.id,
+            "book_title": book.title,
+            "book_short_name": book.short_name,
+            "city_name": city.name,
+            "country": city.country,
+            "review_text": review.review_text,
+            "reviewer_name": review.reviewer_name,
+            "company": review.company,
+            "role": review.role,
+            "review_date": review.review_date.isoformat() if review.review_date else None,
+            "created_at": review.created_at,
+            "original_post_url": review.original_post_url,
+            "social_media_url": review.social_media_url,
+            "source": review.source,
+            "assets": [
+                {
+                    "id": asset.id,
+                    "file_path": asset.file_path,
+                    "file_name": asset.file_name,
+                    "file_type": asset.file_type,
+                    "file_size": asset.file_size,
+                    "created_at": asset.created_at
+                }
+                for asset in assets
+            ]
+        })
+    
+    return {
+        "company": company_name,
+        "reviews": result,
+        "total_count": len(result)
+    }
+
+
+@app.get("/reviews", response_class=HTMLResponse)
+async def reviews_page(request: Request, book_id: Optional[int] = None, city: Optional[str] = None, 
+                      country: Optional[str] = None, company: Optional[str] = None, db: Session = Depends(get_db)):
+    """Reviews listing page with optional filters"""
+    books = db.query(Book).all()
+    return templates.TemplateResponse("reviews.html", {
+        "request": request, 
+        "books": books,
+        "book_id": book_id,
+        "city": city,
+        "country": country,
+        "company": company
+    })
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Reviews - AIE Map</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+        .nav {
+            background-color: #34495e;
+            padding: 0.5rem;
+            text-align: center;
+        }
+        .nav a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            margin: 0 0.5rem;
+            background-color: #3498db;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .nav a:hover {
+            background-color: #2980b9;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .filters {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .filters h2 {
+            margin: 0 0 1rem 0;
+            color: #2c3e50;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .filter-grid {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            align-items: flex-start;
+        }
+        .filter-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .filter-item label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #4a5568;
+            white-space: nowrap;
+        }
+        .filter-item select, 
+        .filter-item input {
+            padding: 0.4rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            background: white;
+            color: #1a202c;
+            transition: all 0.2s ease;
+        }
+        .filter-item select {
+            min-width: 200px;
+        }
+        .filter-item input {
+            width: 180px;
+        }
+        .filter-item select:focus, 
+        .filter-item input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+        }
+        .filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .btn {
+            background-color: #f3f4f6;
+            color: #4b5563;
+            padding: 0.4rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.813rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            background-color: #e5e7eb;
+            border-color: #9ca3af;
+        }
+        .filter-info {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        .results-header {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .review-item {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .review-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .book-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 15px;
+            color: white;
+            font-weight: bold;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .book-badge.aie {
+            background-color: #FF0000;
+        }
+        .book-badge.dmls {
+            background-color: #00FF00;
+        }
+        .review-meta {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        .review-text {
+            margin: 1rem 0;
+            line-height: 1.6;
+            word-wrap: break-word;
+            max-width: 100%;
+        }
+        .review-text.collapsed {
+            max-height: 100px;
+            overflow: hidden;
+            position: relative;
+        }
+        .review-text.collapsed::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: linear-gradient(transparent, white);
+        }
+        .expand-btn {
+            color: #3498db;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 0.5rem;
+        }
+        .expand-btn:hover {
+            text-decoration: underline;
+        }
+        .clickable {
+            color: #3498db;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .clickable:hover {
+            text-decoration: underline;
+        }
+        .reviewer-link {
+            color: inherit;
+            text-decoration: none;
+            font-weight: bold;
+            border-bottom: 1px dotted #3498db;
+            transition: all 0.2s ease;
+        }
+        .reviewer-link:hover {
+            color: #3498db;
+            border-bottom-style: solid;
+        }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #7f8c8d;
+        }
+        .no-results {
+            text-align: center;
+            padding: 2rem;
+            color: #7f8c8d;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .review-assets {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #eee;
+        }
+        .asset-item {
+            display: inline-block;
+            margin: 0.25rem 0.5rem 0.25rem 0;
+            padding: 0.25rem 0.5rem;
+            background-color: #ecf0f1;
+            border-radius: 3px;
+            font-size: 0.8rem;
+        }
+        .autocomplete-container {
+            position: relative;
+            width: 100%;
+        }
+        .autocomplete-list {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        }
+        .autocomplete-item {
+            padding: 0.625rem 0.875rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+        .autocomplete-item:hover, .autocomplete-item.selected {
+            background-color: #f3f4f6;
+            color: #1a202c;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>All Reviews</h1>
+    </div>
+    
+    <div class="nav">
+        <a href="/">Map</a>
+        <a href="/upload">Upload Review</a>
+        <a href="/reviews">All Reviews</a>
+    </div>
+
+    <div class="container">
+        <div class="filters">
+            <h2>Filter Reviews</h2>
+            
+            <div class="filter-grid">
+                <div class="filter-item">
+                    <label for="bookFilter">Book:</label>
+                    <select id="bookFilter">
+                        <option value="">All Books</option>
+                        {% for book in books %}
+                        <option value="{{ book.id }}" {% if book_id == book.id %}selected{% endif %}>
+                            {{ book.title }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="filter-item">
+                    <label for="cityFilter">City:</label>
+                    <div class="autocomplete-container">
+                        <input type="text" id="cityFilter" placeholder="Enter city" value="{{ city or '' }}" autocomplete="off">
+                        <div class="autocomplete-list" id="cityAutocomplete"></div>
+                    </div>
+                </div>
+                
+                <div class="filter-item">
+                    <label for="countryFilter">Country:</label>
+                    <div class="autocomplete-container">
+                        <input type="text" id="countryFilter" placeholder="Enter country" value="{{ country or '' }}" autocomplete="off">
+                        <div class="autocomplete-list" id="countryAutocomplete"></div>
+                    </div>
+                </div>
+                
+                <div class="filter-item">
+                    <label for="companyFilter">Company:</label>
+                    <div class="autocomplete-container">
+                        <input type="text" id="companyFilter" placeholder="Enter company" value="{{ company or '' }}" autocomplete="off">
+                        <div class="autocomplete-list" id="companyAutocomplete"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="filter-actions">
+                <button class="btn" onclick="clearFilters()">Clear All</button>
+                <span class="filter-info">
+                    Filters apply automatically
+                </span>
+            </div>
+        </div>
+
+        <div class="results-header" id="resultsHeader" style="display: none;">
+            <h3 id="resultsTitle"></h3>
+            <p id="resultsCount"></p>
+        </div>
+
+        <div class="loading" id="loading" style="display: none;">
+            Loading reviews...
+        </div>
+
+        <div id="reviewsList"></div>
+        
+        <div class="no-results" id="noResults" style="display: none;">
+            <h3>No reviews found</h3>
+            <p>Try adjusting your filters or browse all reviews.</p>
+        </div>
+    </div>
+
+    <script>
+        let currentReviews = [];
+        let selectedIndex = -1;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add event listeners for automatic filtering
+            setupAutoFiltering();
+            
+            // Setup autocomplete
+            setupAutocomplete();
+            
+            // Load reviews based on initial filters
+            applyFilters();
+        });
+
+        function setupAutoFiltering() {
+            // Book filter - immediate change
+            document.getElementById('bookFilter').addEventListener('change', applyFilters);
+            
+            // Text inputs with debouncing to avoid too many API calls
+            const cityInput = document.getElementById('cityFilter');
+            const countryInput = document.getElementById('countryFilter');
+            const companyInput = document.getElementById('companyFilter');
+            
+            let debounceTimer;
+            
+            function debouncedFilter() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(applyFilters, 500); // 500ms delay
+            }
+            
+            cityInput.addEventListener('input', debouncedFilter);
+            countryInput.addEventListener('input', debouncedFilter);
+            companyInput.addEventListener('input', debouncedFilter);
+            
+            // Also apply on Enter key press for immediate response
+            function handleEnterKey(event) {
+                if (event.key === 'Enter') {
+                    clearTimeout(debounceTimer);
+                    applyFilters();
+                }
+            }
+            
+            cityInput.addEventListener('keypress', handleEnterKey);
+            countryInput.addEventListener('keypress', handleEnterKey);
+            companyInput.addEventListener('keypress', handleEnterKey);
+        }
+
+        function applyFilters() {
+            const bookId = document.getElementById('bookFilter').value;
+            const city = document.getElementById('cityFilter').value.trim();
+            const country = document.getElementById('countryFilter').value.trim();
+            const company = document.getElementById('companyFilter').value.trim();
+
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('reviewsList').innerHTML = '';
+            document.getElementById('resultsHeader').style.display = 'none';
+            document.getElementById('noResults').style.display = 'none';
+
+            // Update URL
+            updateURL(bookId, city, country, company);
+
+            // Load reviews with combined filters
+            loadFilteredReviews(bookId, city, country, company);
+        }
+
+        function clearFilters() {
+            document.getElementById('bookFilter').value = '';
+            document.getElementById('cityFilter').value = '';
+            document.getElementById('countryFilter').value = '';
+            document.getElementById('companyFilter').value = '';
+            applyFilters();
+        }
+
+        function updateURL(bookId, city, country, company) {
+            const params = new URLSearchParams();
+            if (bookId) params.set('book_id', bookId);
+            if (city) params.set('city', city);
+            if (country) params.set('country', country);
+            if (company) params.set('company', company);
+            
+            const newURL = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+            window.history.replaceState({}, '', newURL);
+        }
+
+        async function loadReviewsByBook(bookId) {
+            try {
+                const response = await fetch(`/api/reviews/by-book/${bookId}`);
+                const data = await response.json();
+                displayReviews(data.reviews, `Reviews for ${data.book.title}`, data.total_count);
+            } catch (error) {
+                console.error('Error loading reviews:', error);
+                showNoResults();
+            }
+        }
+
+        async function loadReviewsByLocation(city, country) {
+            try {
+                // Build query parameters
+                const params = new URLSearchParams();
+                if (city) params.set('city', city);
+                if (country) params.set('country', country);
+                
+                const response = await fetch(`/api/reviews/by-location?${params.toString()}`);
+                const data = await response.json();
+                
+                // Generate appropriate title based on location type
+                let title;
+                if (data.location.type === 'city') {
+                    title = `Reviews in ${data.location.city}, ${data.location.country}`;
+                } else if (data.location.type === 'country') {
+                    title = `Reviews in ${data.location.country}`;
+                } else if (data.location.type === 'city_global') {
+                    title = `Reviews in ${data.location.city} (all countries)`;
+                }
+                
+                displayReviews(data.reviews, title, data.total_count);
+            } catch (error) {
+                console.error('Error loading reviews:', error);
+                showNoResults();
+            }
+        }
+
+        async function loadReviewsByCompany(company) {
+            try {
+                const response = await fetch(`/api/reviews/by-company/${encodeURIComponent(company)}`);
+                const data = await response.json();
+                displayReviews(data.reviews, `Reviews from ${data.company}`, data.total_count);
+            } catch (error) {
+                console.error('Error loading reviews:', error);
+                showNoResults();
+            }
+        }
+
+        async function loadFilteredReviews(bookId, city, country, company) {
+            try {
+                // Build query parameters for combined filtering
+                const params = new URLSearchParams();
+                if (bookId) params.set('book_id', bookId);
+                if (city) params.set('city', city);
+                if (country) params.set('country', country);
+                if (company) params.set('company', company);
+                
+                const response = await fetch(`/api/reviews/filtered?${params.toString()}`);
+                const data = await response.json();
+                
+                // Generate title showing active filters
+                const activeFilters = data.filters.active_filters;
+                let title = 'Filtered Reviews';
+                if (activeFilters.length > 0) {
+                    title = `Reviews filtered by: ${activeFilters.join(', ')}`;
+                }
+                
+                displayReviews(data.reviews, title, data.total_count);
+            } catch (error) {
+                console.error('Error loading filtered reviews:', error);
+                showNoResults();
+            }
+        }
+
+        async function loadAllReviews() {
+            // For now, show a message that this feature needs implementation
+            showNoResults();
+        }
+
+        function displayReviews(reviews, title, count) {
+            document.getElementById('loading').style.display = 'none';
+            
+            if (reviews.length === 0) {
+                showNoResults();
+                return;
+            }
+
+            // Show results header
+            document.getElementById('resultsTitle').textContent = title;
+            document.getElementById('resultsCount').textContent = `${count} review${count !== 1 ? 's' : ''} found`;
+            document.getElementById('resultsHeader').style.display = 'block';
+
+            // Display reviews
+            const reviewsList = document.getElementById('reviewsList');
+            reviewsList.innerHTML = reviews.map(review => createReviewHTML(review)).join('');
+            
+            currentReviews = reviews;
+        }
+
+        function showNoResults(message = null) {
+            document.getElementById('loading').style.display = 'none';
+            const noResultsDiv = document.getElementById('noResults');
+            
+            if (message) {
+                noResultsDiv.innerHTML = `
+                    <h3>No reviews found</h3>
+                    <p>${message}</p>
+                `;
+            } else {
+                noResultsDiv.innerHTML = `
+                    <h3>No reviews found</h3>
+                    <p>Try adjusting your filters or browse all reviews.</p>
+                `;
+            }
+            
+            noResultsDiv.style.display = 'block';
+        }
+
+        function createReviewHTML(review) {
+            const bookClass = review.book_short_name.toLowerCase();
+            const reviewTextId = `review-text-${review.id}`;
+            const isLongText = review.review_text && review.review_text.length > 300;
+            
+            return `
+                <div class="review-item">
+                    <div class="review-header">
+                        <div>
+                            <a href="/reviews?book_id=${getBookIdByShortName(review.book_short_name)}" 
+                               class="book-badge ${bookClass}">${review.book_title}</a>
+                        </div>
+                        <div class="review-meta">
+                            <a href="/reviews?city=${encodeURIComponent(review.city_name)}&country=${encodeURIComponent(review.country)}" 
+                               class="clickable">${review.city_name}</a>, 
+                            <a href="/reviews?country=${encodeURIComponent(review.country)}" 
+                               class="clickable">${review.country}</a>
+                            ${review.review_date ? `• ${new Date(review.review_date).toLocaleDateString()}` : ''}
+                            • Uploaded: ${new Date(review.created_at).toLocaleDateString()}
+                        </div>
+                    </div>
+                    
+                    ${review.reviewer_name ? `
+                        <div style="margin-bottom: 0.5rem;">
+                            ${review.social_media_url ? 
+                                `<a href="${review.social_media_url}" target="_blank" rel="noopener noreferrer" class="reviewer-link">
+                                    ${review.reviewer_name}
+                                </a>` : 
+                                `<strong>${review.reviewer_name}</strong>`
+                            }
+                            ${review.company ? ` at <a href="/reviews?company=${encodeURIComponent(review.company)}" class="clickable">${review.company}</a>` : ''}
+                            ${review.role ? ` (${review.role})` : ''}
+                        </div>
+                    ` : ''}
+                    
+                    ${review.review_text ? `
+                        <div class="review-text ${isLongText ? 'collapsed' : ''}" id="${reviewTextId}">
+                            ${formatReviewText(review.review_text)}
+                        </div>
+                        ${isLongText ? `<div class="expand-btn" onclick="toggleReviewText('${reviewTextId}')">Read more</div>` : ''}
+                    ` : ''}
+                    
+                    <div style="margin-top: 0.5rem; font-size: 0.9rem; color: #7f8c8d;">
+                        ${review.source ? `Source: ${review.source}` : ''}
+                        ${review.original_post_url ? ` • <a href="${review.original_post_url}" target="_blank" class="clickable">Original Post</a>` : ''}
+                    </div>
+                    
+                    ${review.assets && review.assets.length > 0 ? `
+                        <div class="review-assets">
+                            <strong>Attachments:</strong>
+                            ${review.assets.map(asset => `
+                                <span class="asset-item">📎 ${asset.file_name || 'Screenshot'} (${(asset.file_size / 1024).toFixed(1)} KB)</span>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function getBookIdByShortName(shortName) {
+            // Helper function to get book ID from short name
+            {% for book in books %}
+            if ('{{ book.short_name }}' === shortName) return {{ book.id }};
+            {% endfor %}
+            return '';
+        }
+
+        function toggleReviewText(elementId) {
+            const element = document.getElementById(elementId);
+            const expandBtn = element.nextElementSibling;
+            
+            if (element.classList.contains('collapsed')) {
+                element.classList.remove('collapsed');
+                expandBtn.textContent = 'Read less';
+            } else {
+                element.classList.add('collapsed');
+                expandBtn.textContent = 'Read more';
+            }
+        }
+
+        // Helper function to format review text with proper line breaks and HTML escaping
+        function formatReviewText(text) {
+            if (!text) return '';
+            // First escape HTML to prevent XSS
+            const escaped = text.replace(/&/g, '&amp;')
+                               .replace(/</g, '&lt;')
+                               .replace(/>/g, '&gt;')
+                               .replace(/"/g, '&quot;')
+                               .replace(/'/g, '&#x27;');
+            // Then convert line breaks to <br> tags
+            return escaped.replace(/\r\n/g, '<br>')
+                         .replace(/\n/g, '<br>')
+                         .replace(/\r/g, '<br>');
+        }
+
+        // Filter by clicking on book badges, cities, or companies
+        function filterByBook(bookId) {
+            document.getElementById('bookFilter').value = bookId;
+            document.getElementById('cityFilter').value = '';
+            document.getElementById('countryFilter').value = '';
+            document.getElementById('companyFilter').value = '';
+            applyFilters();
+        }
+
+        function filterByLocation(city, country) {
+            document.getElementById('bookFilter').value = '';
+            document.getElementById('cityFilter').value = city;
+            document.getElementById('countryFilter').value = country;
+            document.getElementById('companyFilter').value = '';
+            applyFilters();
+        }
+
+        function filterByCompany(company) {
+            document.getElementById('bookFilter').value = '';
+            document.getElementById('cityFilter').value = '';
+            document.getElementById('countryFilter').value = '';
+            document.getElementById('companyFilter').value = company;
+            applyFilters();
+        }
+
+        // Autocomplete functionality
+        function setupAutocomplete() {
+            setupAutocompleteField('cityFilter', 'cityAutocomplete', '/api/autocomplete/cities', 'city');
+            setupAutocompleteField('countryFilter', 'countryAutocomplete', '/api/autocomplete/countries', 'country');
+            setupAutocompleteField('companyFilter', 'companyAutocomplete', '/api/autocomplete/companies', 'company');
+        }
+
+        function setupAutocompleteField(inputId, listId, apiEndpoint, fieldType) {
+            const input = document.getElementById(inputId);
+            const list = document.getElementById(listId);
+            let currentSuggestions = [];
+            let debounceTimer;
+
+            // Show suggestions on input
+            input.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                const query = this.value.trim();
+                
+                if (query.length < 1) {
+                    hideAutocomplete(list);
+                    return;
+                }
+
+                debounceTimer = setTimeout(() => {
+                    fetchSuggestions(query, apiEndpoint, list, fieldType);
+                }, 300);
+            });
+
+            // Show all suggestions on focus
+            input.addEventListener('focus', function() {
+                const query = this.value.trim();
+                if (query.length === 0) {
+                    // Show all available options
+                    fetchSuggestions('', apiEndpoint, list, fieldType);
+                }
+            });
+
+            // Hide suggestions on blur (with delay for click to register)
+            input.addEventListener('blur', function() {
+                setTimeout(() => hideAutocomplete(list), 200);
+            });
+
+            // Keyboard navigation
+            input.addEventListener('keydown', function(e) {
+                const items = list.querySelectorAll('.autocomplete-item');
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                    updateSelection(items, selectedIndex);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, -1);
+                    updateSelection(items, selectedIndex);
+                } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                    e.preventDefault();
+                    if (items[selectedIndex]) {
+                        selectAutocompleteItem(input, items[selectedIndex], list, fieldType);
+                    }
+                } else if (e.key === 'Escape') {
+                    hideAutocomplete(list);
+                }
+            });
+        }
+
+        async function fetchSuggestions(query, apiEndpoint, listElement, fieldType) {
+            try {
+                const params = query ? `?query=${encodeURIComponent(query)}` : '';
+                const response = await fetch(`${apiEndpoint}${params}`);
+                const suggestions = await response.json();
+                
+                displaySuggestions(suggestions, listElement, fieldType);
+            } catch (error) {
+                console.error('Error fetching suggestions:', error);
+            }
+        }
+
+        function displaySuggestions(suggestions, listElement, fieldType) {
+            listElement.innerHTML = '';
+            selectedIndex = -1;
+
+            if (suggestions.length === 0) {
+                hideAutocomplete(listElement);
+                return;
+            }
+
+            suggestions.forEach((suggestion, index) => {
+                const item = document.createElement('div');
+                item.className = 'autocomplete-item';
+                item.textContent = suggestion.label;
+                item.dataset.value = suggestion.name;
+                if (fieldType === 'city' && suggestion.country) {
+                    item.dataset.country = suggestion.country;
+                }
+                
+                item.addEventListener('click', function() {
+                    const input = listElement.previousElementSibling;
+                    selectAutocompleteItem(input, item, listElement, fieldType);
+                });
+
+                listElement.appendChild(item);
+            });
+
+            listElement.style.display = 'block';
+        }
+
+        function selectAutocompleteItem(input, item, listElement, fieldType) {
+            input.value = item.dataset.value;
+            
+            // For city selection, also update country if available
+            if (fieldType === 'city' && item.dataset.country) {
+                document.getElementById('countryFilter').value = item.dataset.country;
+            }
+            
+            hideAutocomplete(listElement);
+            
+            // Trigger the filter update
+            clearTimeout(input.debounceTimer);
+            applyFilters();
+        }
+
+        function updateSelection(items, index) {
+            items.forEach((item, i) => {
+                if (i === index) {
+                    item.classList.add('selected');
+                    item.scrollIntoView({ block: 'nearest' });
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+
+        function hideAutocomplete(listElement) {
+            listElement.style.display = 'none';
+            selectedIndex = -1;
+        }
+    </script>
+</body>
+</html>

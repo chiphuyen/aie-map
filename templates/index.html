@@ -121,7 +121,9 @@
         }
         .review-text {
             margin: 0.5rem 0;
-            line-height: 1.4;
+            line-height: 1.6;
+            word-wrap: break-word;
+            max-width: 100%;
         }
         .review-link {
             color: #3498db;
@@ -130,6 +132,49 @@
         }
         .review-link:hover {
             text-decoration: underline;
+        }
+        
+        /* Cluster marker styles */
+        .marker-cluster {
+            background-color: #3498db;
+            background-clip: padding-box;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .marker-cluster div {
+            width: 36px;
+            height: 36px;
+            margin: 2px;
+            border-radius: 50%;
+            background-color: #2980b9;
+            text-align: center;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            line-height: 36px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .marker-cluster:hover {
+            transform: scale(1.1);
+        }
+        .marker-cluster-small {
+            background-color: rgba(110, 204, 57, 0.6);
+        }
+        .marker-cluster-small div {
+            background-color: rgba(110, 204, 57, 0.9);
+        }
+        .marker-cluster-medium {
+            background-color: rgba(241, 211, 87, 0.6);
+        }
+        .marker-cluster-medium div {
+            background-color: rgba(241, 211, 87, 0.9);
+        }
+        .marker-cluster-large {
+            background-color: rgba(253, 156, 115, 0.6);
+        }
+        .marker-cluster-large div {
+            background-color: rgba(253, 156, 115, 0.9);
         }
     </style>
 </head>
@@ -142,6 +187,7 @@
     <div class="nav">
         <a href="/">Map</a>
         <a href="/upload">Upload Review</a>
+        <a href="/reviews">All Reviews</a>
     </div>
 
     <div id="map"></div>
@@ -168,9 +214,37 @@
 
         // Create marker cluster group
         const markers = L.markerClusterGroup({
-            spiderfyOnMaxZoom: false,
+            spiderfyOnMaxZoom: true,
             showCoverageOnHover: false,
-            zoomToBoundsOnClick: false
+            zoomToBoundsOnClick: true,
+            maxClusterRadius: 80,
+            iconCreateFunction: function(cluster) {
+                const childCount = cluster.getChildCount();
+                let c = ' marker-cluster-';
+                if (childCount < 10) {
+                    c += 'small';
+                } else if (childCount < 100) {
+                    c += 'medium';
+                } else {
+                    c += 'large';
+                }
+                
+                return new L.DivIcon({
+                    html: `<div><span>${childCount}</span></div>`,
+                    className: 'marker-cluster' + c,
+                    iconSize: new L.Point(40, 40)
+                });
+            }
+        });
+        
+        // Add cluster click event
+        markers.on('clusterclick', function (event) {
+            const cluster = event.layer;
+            const childMarkers = cluster.getAllChildMarkers();
+            
+            // Get bounds of all markers in the cluster
+            const group = new L.featureGroup(childMarkers);
+            map.fitBounds(group.getBounds().pad(0.1));
         });
 
         // Add legend
@@ -181,36 +255,34 @@
                 <h4>Book Reviews</h4>
                 <div class="legend-item">
                     <div class="legend-color" style="background-color: #FF0000;"></div>
-                    <span>AI Engineering</span>
+                    <a href="/reviews?book_id=1" style="color: black; text-decoration: none;">AI Engineering</a>
                 </div>
                 <div class="legend-item">
                     <div class="legend-color" style="background-color: #00FF00;"></div>
-                    <span>Designing ML Systems</span>
+                    <a href="/reviews?book_id=2" style="color: black; text-decoration: none;">Designing ML Systems</a>
+                </div>
+                <div style="margin-top: 10px; text-align: center;">
+                    <a href="/reviews" style="color: #3498db; text-decoration: none; font-size: 0.9rem;">View All Reviews</a>
                 </div>
             `;
             return div;
         };
         legend.addTo(map);
 
-        // Function to create custom marker
-        function createCustomMarker(data) {
-            const aieCount = data.aie_count || 0;
-            const dmlsCount = data.dmls_count || 0;
-            const total = data.total_count || 0;
+        // Function to create custom marker for a specific book
+        function createBookMarker(data) {
+            const count = data.review_count || 0;
+            const color = data.pin_color || '#3498db';
             
-            // Create pie chart-like marker
-            const size = Math.max(20, Math.min(60, total * 5));
-            const aiePercent = total > 0 ? (aieCount / total) * 100 : 0;
+            // Size based on review count
+            const size = Math.max(20, Math.min(50, 15 + count * 8));
             
             const markerHtml = `
                 <div style="
                     width: ${size}px;
                     height: ${size}px;
                     border-radius: 50%;
-                    background: conic-gradient(
-                        #FF0000 0% ${aiePercent}%,
-                        #00FF00 ${aiePercent}% 100%
-                    );
+                    background-color: ${color};
                     border: 3px solid white;
                     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
                     display: flex;
@@ -219,7 +291,8 @@
                     color: white;
                     font-weight: bold;
                     text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
-                ">${total}</div>
+                    font-size: ${Math.max(10, size * 0.3)}px;
+                ">${count}</div>
             `;
             
             return L.divIcon({
@@ -236,17 +309,48 @@
                 const response = await fetch('/api/map-data');
                 const data = await response.json();
                 
-                data.forEach(cityData => {
-                    const marker = L.marker(
-                        [cityData.latitude, cityData.longitude],
-                        { icon: createCustomMarker(cityData) }
-                    );
-                    
-                    marker.on('click', () => {
-                        showCityReviews(cityData.city_name, cityData.country);
+                // Group markers by location to create slight offsets for multiple books in same city
+                const locationGroups = {};
+                
+                data.forEach(bookData => {
+                    const key = `${bookData.city_name}-${bookData.country}`;
+                    if (!locationGroups[key]) {
+                        locationGroups[key] = [];
+                    }
+                    locationGroups[key].push(bookData);
+                });
+                
+                // Create markers with slight offsets if multiple books in same city
+                Object.values(locationGroups).forEach(group => {
+                    group.forEach((bookData, index) => {
+                        let lat = bookData.latitude;
+                        let lng = bookData.longitude;
+                        
+                        // Add slight offset for multiple markers in same city
+                        if (group.length > 1) {
+                            const offsetDistance = 0.005; // About 500m offset
+                            const angle = (index / group.length) * 2 * Math.PI;
+                            lat += Math.cos(angle) * offsetDistance;
+                            lng += Math.sin(angle) * offsetDistance;
+                        }
+                        
+                        const marker = L.marker(
+                            [lat, lng],
+                            { icon: createBookMarker(bookData) }
+                        );
+                        
+                        // Add tooltip showing book and count
+                        marker.bindTooltip(
+                            `${bookData.book_title}: ${bookData.review_count} review${bookData.review_count !== 1 ? 's' : ''} in ${bookData.city_name}`,
+                            { direction: 'top', offset: [0, -10] }
+                        );
+                        
+                        marker.on('click', () => {
+                            showCityReviews(bookData.city_name, bookData.country);
+                        });
+                        
+                        markers.addLayer(marker);
                     });
-                    
-                    markers.addLayer(marker);
                 });
                 
                 map.addLayer(markers);
@@ -273,17 +377,24 @@
                     content.innerHTML = reviews.map(review => `
                         <div class="review-item">
                             <div class="review-book" style="color: ${review.book_short_name === 'AIE' ? '#FF0000' : '#00FF00'}">
-                                ${review.book_title}
+                                <a href="/reviews?book_id=${review.book_short_name === 'AIE' ? '1' : '2'}" 
+                                   style="color: inherit; text-decoration: none;" 
+                                   target="_blank">${review.book_title}</a>
                             </div>
                             ${review.reviewer_name ? `
                                 <div class="review-author">
-                                    ${review.reviewer_name}
-                                    ${review.company ? ` at ${review.company}` : ''}
+                                    ${review.social_media_url ? 
+                                        `<a href="${review.social_media_url}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none; font-weight: bold; border-bottom: 1px dotted #3498db;">
+                                            ${review.reviewer_name}
+                                        </a>` : 
+                                        review.reviewer_name
+                                    }
+                                    ${review.company ? ` at <a href="/reviews?company=${encodeURIComponent(review.company)}" target="_blank" style="color: #3498db; text-decoration: none;">${review.company}</a>` : ''}
                                     ${review.role ? ` (${review.role})` : ''}
                                 </div>
                             ` : ''}
                             ${review.review_text ? `
-                                <div class="review-text">${review.review_text}</div>
+                                <div class="review-text">${formatReviewText(review.review_text)}</div>
                             ` : ''}
                             <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #7f8c8d;">
                                 ${review.review_date ? `Date: ${review.review_date} | ` : ''}
@@ -295,12 +406,11 @@
                                     <a href="${review.original_post_url}" target="_blank" class="review-link">
                                         View Original Post
                                     </a>
+                                    <span style="color: #ccc; margin: 0 0.5rem;">|</span>
                                 ` : ''}
-                                ${review.social_media_url ? `
-                                    <a href="${review.social_media_url}" target="_blank" class="review-link" style="margin-left: 1rem;">
-                                        Reviewer Profile
-                                    </a>
-                                ` : ''}
+                                <a href="/reviews?city=${encodeURIComponent(cityName)}&country=${encodeURIComponent(country)}" 
+                                   target="_blank" class="review-link">${cityName}</a>, <a href="/reviews?country=${encodeURIComponent(country)}" 
+                                   target="_blank" class="review-link">${country}</a>
                             </div>
                             ${review.assets && review.assets.length > 0 ? `
                                 <div style="margin-top: 0.5rem;">
@@ -325,6 +435,21 @@
         // Function to close info panel
         function closeInfoPanel() {
             document.getElementById('infoPanel').classList.remove('open');
+        }
+
+        // Helper function to format review text with proper line breaks and HTML escaping
+        function formatReviewText(text) {
+            if (!text) return '';
+            // First escape HTML to prevent XSS
+            const escaped = text.replace(/&/g, '&amp;')
+                               .replace(/</g, '&lt;')
+                               .replace(/>/g, '&gt;')
+                               .replace(/"/g, '&quot;')
+                               .replace(/'/g, '&#x27;');
+            // Then convert line breaks to <br> tags
+            return escaped.replace(/\r\n/g, '<br>')
+                         .replace(/\n/g, '<br>')
+                         .replace(/\r/g, '<br>');
         }
 
         // Load data when page loads
