@@ -180,7 +180,6 @@
 </head>
 <body>
     <div class="header">
-        <!-- <h1>MVAIE Reviews</h1> -->
         <p>What people are saying about <i>Designing Machine Learning Systems</i> (2022) and <i>AI Engineering</i> (2025)</p>
     </div>
     
@@ -225,6 +224,7 @@
             showCoverageOnHover: false,
             zoomToBoundsOnClick: true,
             maxClusterRadius: 80,
+            disableClusteringAtZoom: 19,  // Disable clustering at very high zoom levels
             iconCreateFunction: function(cluster) {
                 // Sum up all review counts from child markers
                 const childMarkers = cluster.getAllChildMarkers();
@@ -364,7 +364,8 @@
                             { direction: 'top', offset: [0, -10] }
                         );
                         
-                        marker.on('click', () => {
+                        marker.on('click', (e) => {
+                            e.originalEvent.stopPropagation(); // Prevent event bubbling
                             showCityReviews(bookData.city_name, bookData.country, bookData.state);
                         });
                         

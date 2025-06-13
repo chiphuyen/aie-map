@@ -187,7 +187,6 @@ async def get_map_data(db: Session = Depends(get_db)):
      .group_by(City.id, Book.id)
     
     result = query.all()
-    print(f"DEBUG: Map data query returned {len(result)} city-book combinations")
     
     map_data = [
         {
@@ -204,7 +203,6 @@ async def get_map_data(db: Session = Depends(get_db)):
         for row in result
     ]
     
-    print(f"DEBUG: Returning map data: {map_data}")
     return map_data
 
 @app.get("/api/reviews/filtered")
@@ -364,7 +362,8 @@ async def get_city_reviews(city_name: str, country: str, state: Optional[str] = 
     if state:
         query = query.filter(func.lower(City.state) == func.lower(state))
     else:
-        query = query.filter(City.state.is_(None))
+        # Handle both NULL and empty string for state when not specified
+        query = query.filter((City.state.is_(None)) | (City.state == ""))
     
     city = query.first()
     if not city:
@@ -415,6 +414,11 @@ def get_or_create_city(db: Session, city_name: str, country: str, state: Optiona
     # Input is already sanitized by Pydantic validator
     # Build query with optional state
     # We need to be precise about state matching to handle cities with same name
+    
+    # Normalize empty string to None for consistent handling
+    if state == "":
+        state = None
+    
     if state:
         # If state is provided, look for exact match including state
         city = db.query(City).filter(
@@ -423,11 +427,11 @@ def get_or_create_city(db: Session, city_name: str, country: str, state: Optiona
             func.lower(City.state) == state.lower()
         ).first()
     else:
-        # If no state provided, look for entry without state
+        # If no state provided, look for entry without state (NULL or empty string)
         city = db.query(City).filter(
             func.lower(City.name) == city_name.lower(), 
             func.lower(City.country) == country.lower(),
-            City.state.is_(None)
+            (City.state.is_(None)) | (City.state == "")
         ).first()
     
     if not city:
@@ -446,13 +450,10 @@ def get_or_create_city(db: Session, city_name: str, country: str, state: Optiona
                 detail=f"Could not find coordinates for '{location_str}'. Please check the spelling and try again, or verify this location exists."
             )
         
-        location_str = f"{city_name}, {state}, {country}" if state else f"{city_name}, {country}"
-        print(f"DEBUG: Creating new city: {location_str} at {coords}")
-        
         city = City(
             name=city_name,
             country=country,
-            state=state,
+            state=state if state else None,  # Ensure empty strings become None
             latitude=coords[0],
             longitude=coords[1]
         )
@@ -489,16 +490,11 @@ def geocode_city_api(city_name: str, country: str, state: Optional[str] = None) 
 @app.post("/api/reviews")
 async def create_review(review_data: ReviewCreate, file_path: Optional[str] = None, db: Session = Depends(get_db)):
     """Create a new review"""
-    print(f"DEBUG: Creating review for book {review_data.book_id}, city {review_data.city_name}, {review_data.country}")
-    
     book = db.query(Book).filter(Book.id == review_data.book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
-    print(f"DEBUG: Found book: {book.title}")
-    
     city = get_or_create_city(db, review_data.city_name, review_data.country, review_data.state)
-    print(f"DEBUG: City: {city.name}, {city.country} (ID: {city.id})")
     
     # Parse date if provided
     review_date = None
@@ -526,8 +522,6 @@ async def create_review(review_data: ReviewCreate, file_path: Optional[str] = No
     db.commit()
     db.refresh(review)
     
-    print(f"DEBUG: Created review with ID: {review.id}")
-    
     # Add asset if file_path provided
     if file_path:
         try:
@@ -543,7 +537,6 @@ async def create_review(review_data: ReviewCreate, file_path: Optional[str] = No
             )
             db.add(asset)
             db.commit()
-            print(f"DEBUG: Added asset for review {review.id}")
         except Exception as e:
             print(f"Error adding asset: {e}")
     
