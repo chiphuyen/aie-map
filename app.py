@@ -34,9 +34,12 @@ os.makedirs("templates", exist_ok=True)
 
 # Determine data directory based on environment
 # Render mounts disk at /app/data, locally we use ./data
-DATA_DIR = os.getenv("RENDER", None) and "/app/data" or "./data"
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
+if os.getenv("RENDER"):
+    DATA_DIR = "/app/data"
+else:
+    DATA_DIR = "./data"
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/aie_map.db"
