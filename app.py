@@ -16,11 +16,15 @@ import requests
 import pytesseract
 from PIL import Image
 import uuid
+from dotenv import load_dotenv
 from auth import (
     verify_password, check_rate_limit, record_login_attempt, 
     create_session, get_session, delete_session, clean_expired_sessions,
     get_client_ip, SESSION_COOKIE_NAME
 )
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="AIE Map", description="Track book reviews on a world map")
 
@@ -1018,4 +1022,5 @@ async def get_single_review(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

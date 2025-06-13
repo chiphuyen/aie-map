@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: aie-map
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
