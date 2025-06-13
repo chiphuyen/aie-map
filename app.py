@@ -28,8 +28,18 @@ load_dotenv()
 
 app = FastAPI(title="AIE Map", description="Track book reviews on a world map")
 
+# Create directories FIRST before database connection
+os.makedirs("static", exist_ok=True)
+os.makedirs("templates", exist_ok=True)
+
+# Determine data directory based on environment
+# Render mounts disk at /app/data, locally we use ./data
+DATA_DIR = os.getenv("RENDER", None) and "/app/data" or "./data"
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
+
 # Database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./data/aie_map.db"
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/aie_map.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -38,12 +48,6 @@ Base.metadata.create_all(bind=engine)
 # Static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-# Create directories
-os.makedirs("static", exist_ok=True)
-os.makedirs("templates", exist_ok=True)
-os.makedirs("data", exist_ok=True)
-os.makedirs("data/uploads", exist_ok=True)
 
 def get_db():
     db = SessionLocal()
@@ -567,7 +571,7 @@ async def upload_screenshot(
     # Save uploaded file
     file_id = str(uuid.uuid4())
     file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-    file_path = f"data/uploads/{file_id}.{file_extension}"
+    file_path = f"{DATA_DIR}/uploads/{file_id}.{file_extension}"
     
     with open(file_path, "wb") as buffer:
         content = await file.read()
