@@ -1,8 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, Date, DateTime, ForeignKey, DECIMAL
+from sqlalchemy import create_engine, Column, Integer, String, Text, Date, DateTime, ForeignKey, DECIMAL, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 
 Base = declarative_base()
@@ -23,6 +23,7 @@ class City(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     country = Column(String(255), nullable=False)
+    state = Column(String(255), nullable=True)  # State/Province/Region
     latitude = Column(DECIMAL(10, 8), nullable=False)
     longitude = Column(DECIMAL(11, 8), nullable=False)
     
@@ -62,11 +63,21 @@ class ReviewAsset(Base):
     
     review = relationship("Review", back_populates="assets")
 
+class AdminSession(Base):
+    __tablename__ = "admin_sessions"
+    
+    id = Column(String(255), primary_key=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_accessed = Column(DateTime, default=datetime.utcnow)
+    ip_address = Column(String(45))  # Support IPv6
+
 # Pydantic models for API
 class ReviewCreate(BaseModel):
     book_id: int
     city_name: str
     country: str
+    state: Optional[str] = None
     review_text: Optional[str] = None
     reviewer_name: Optional[str] = None
     company: Optional[str] = None
@@ -75,6 +86,16 @@ class ReviewCreate(BaseModel):
     original_post_url: Optional[str] = None
     social_media_url: Optional[str] = None
     source: Optional[str] = None
+    
+    @field_validator('city_name', 'country')
+    @classmethod
+    def strip_required_strings(cls, v):
+        return v.strip() if v else v
+    
+    @field_validator('state', 'review_text', 'reviewer_name', 'company', 'role', 'original_post_url', 'social_media_url', 'source')
+    @classmethod
+    def strip_optional_strings(cls, v):
+        return v.strip() if v else v
 
 class ReviewAssetResponse(BaseModel):
     id: int
@@ -93,6 +114,7 @@ class ReviewResponse(BaseModel):
     book_short_name: str
     city_name: str
     country: str
+    state: Optional[str]
     review_text: Optional[str]
     reviewer_name: Optional[str]
     company: Optional[str]
@@ -110,6 +132,7 @@ class ReviewResponse(BaseModel):
 class CityStats(BaseModel):
     city_name: str
     country: str
+    state: Optional[str]
     latitude: float
     longitude: float
     aie_count: int

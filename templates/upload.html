@@ -261,6 +261,11 @@
                         <small style="color: #7f8c8d;">All cities worldwide supported. Start typing to see suggestions or enter any city name.</small>
                     </div>
                     <div class="form-group">
+                        <label for="state">State/Province</label>
+                        <input type="text" id="state" name="state" placeholder="e.g., California, Ontario (optional)">
+                        <small style="color: #7f8c8d;">Include if multiple cities with same name exist</small>
+                    </div>
+                    <div class="form-group">
                         <label for="country">Country *</label>
                         <div class="autocomplete-container">
                             <input type="text" id="country" name="country" required placeholder="Start typing country name..." autocomplete="off">
@@ -347,7 +352,7 @@
                         if (suggestions.length > 0) {
                             suggestionsElement.innerHTML = suggestions.map(suggestion => {
                                 const displayText = suggestion.full_name || suggestion;
-                                return `<div class="autocomplete-suggestion" data-value="${suggestion.city || suggestion}" data-country="${suggestion.country || ''}">${displayText}</div>`;
+                                return `<div class="autocomplete-suggestion" data-value="${suggestion.city || suggestion}" data-country="${suggestion.country || ''}" data-state="${suggestion.state || ''}">${displayText}</div>`;
                             }).join('');
                             suggestionsElement.style.display = 'block';
                         } else {
@@ -364,13 +369,17 @@
                 if (e.target.classList.contains('autocomplete-suggestion')) {
                     const value = e.target.getAttribute('data-value');
                     const country = e.target.getAttribute('data-country');
+                    const state = e.target.getAttribute('data-state');
                     
                     inputElement.value = value;
                     suggestionsElement.style.display = 'none';
                     
-                    // If this is a city selection, also fill in the country
+                    // If this is a city selection, also fill in the country and state
                     if (country && inputElement.id === 'city') {
                         document.getElementById('country').value = country;
+                        if (state) {
+                            document.getElementById('state').value = state;
+                        }
                     }
                 }
             });
@@ -490,13 +499,13 @@
             }
             
             if (info.reviewer_name) {
-                document.getElementById('reviewerName').value = info.reviewer_name;
+                document.getElementById('reviewerName').value = info.reviewer_name.trim();
             }
             if (info.company) {
-                document.getElementById('company').value = info.company;
+                document.getElementById('company').value = info.company.trim();
             }
             if (info.role) {
-                document.getElementById('role').value = info.role;
+                document.getElementById('role').value = info.role.trim();
             }
             if (info.source) {
                 document.getElementById('source').value = info.source;
@@ -512,6 +521,13 @@
             
             const formData = new FormData(reviewForm);
             const data = Object.fromEntries(formData);
+            
+            // Sanitize string inputs
+            Object.keys(data).forEach(key => {
+                if (typeof data[key] === 'string') {
+                    data[key] = data[key].trim();
+                }
+            });
             
             try {
                 let reviews_created = 0;

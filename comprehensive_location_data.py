@@ -23,7 +23,10 @@ class LocationService:
         raw_cities = gc.get_cities()
         
         # Convert to our format and filter for better quality
-        self.cities_cache = {}
+        # Using a list to store all cities, not a dict that overwrites duplicates
+        self.cities_list = []
+        self.cities_cache = {}  # Keep for backward compatibility
+        
         for city_id, city_data in raw_cities.items():
             # Only include cities with population > 1000 for better data quality
             if city_data.get('population', 0) >= 1000:
@@ -37,18 +40,36 @@ class LocationService:
                 except:
                     country_name = country_code
                 
-                # Create unique key for city-country combination
-                key = f"{city_name}_{country_name}"
+                # Get admin1 (state/province) information
+                admin1_code = city_data.get('admin1code', '')
+                state_name = None
+                if admin1_code and country_code:
+                    try:
+                        # Try to get state/province name from geonames
+                        state_name = gc.get_us_states().get(admin1_code, {}).get('name') if country_code == 'US' else None
+                    except:
+                        pass
                 
-                self.cities_cache[key] = {
+                city_info = {
                     'city': city_name,
                     'country': country_name,
                     'country_code': country_code,
+                    'state': state_name,
+                    'admin1code': admin1_code,
                     'latitude': float(city_data['latitude']),
                     'longitude': float(city_data['longitude']),
                     'population': city_data.get('population', 0),
                     'timezone': city_data.get('timezone', ''),
                 }
+                
+                # Add to list (preserves all cities)
+                self.cities_list.append(city_info)
+                
+                # Also add to cache with key (for backward compatibility)
+                # For duplicate keys, keep the one with highest population
+                key = f"{city_name}_{country_name}"
+                if key not in self.cities_cache or city_info['population'] > self.cities_cache[key]['population']:
+                    self.cities_cache[key] = city_info
         
         # Get all countries
         self.countries_cache = []
@@ -62,7 +83,7 @@ class LocationService:
         self.countries_cache.extend(additional_countries)
         self.countries_cache = sorted(list(set(self.countries_cache)))
         
-        print(f"Loaded {len(self.cities_cache)} cities and {len(self.countries_cache)} countries")
+        print(f"Loaded {len(self.cities_list)} cities ({len(self.cities_cache)} unique city-country pairs) and {len(self.countries_cache)} countries")
     
     def search_cities(self, query: str, limit: int = 20) -> List[Dict]:
         """Search cities by name"""
@@ -72,21 +93,26 @@ class LocationService:
         query_lower = query.lower()
         results = []
         
-        for key, city_data in self.cities_cache.items():
+        # Search in cities_list to get ALL matching cities
+        for city_data in self.cities_list:
             if query_lower in city_data['city'].lower():
+                # Build display name with state if available
+                display_parts = [city_data['city']]
+                if city_data.get('state'):
+                    display_parts.append(city_data['state'])
+                display_parts.append(city_data['country'])
+                
                 results.append({
                     'city': city_data['city'],
                     'country': city_data['country'],
-                    'full_name': f"{city_data['city']}, {city_data['country']}",
+                    'state': city_data.get('state'),
+                    'full_name': ', '.join(display_parts),
                     'latitude': city_data['latitude'],
                     'longitude': city_data['longitude'],
                     'population': city_data['population']
                 })
-                
-                if len(results) >= limit:
-                    break
         
-        # Sort by population (larger cities first)
+        # Sort by population (larger cities first) BEFORE limiting
         results.sort(key=lambda x: x['population'], reverse=True)
         return results[:limit]
     
@@ -100,22 +126,27 @@ class LocationService:
                   if query_lower in country.lower()]
         return results[:limit]
     
-    def get_city_coordinates(self, city_name: str, country_name: str) -> Optional[Tuple[float, float]]:
-        """Get coordinates for a specific city and country"""
+    def get_city_coordinates(self, city_name: str, country_name: str, state_name: Optional[str] = None) -> Optional[Tuple[float, float]]:
+        """Get coordinates for a specific city, country, and optionally state"""
         # Normalize country name
         normalized_country = self._normalize_country_name(country_name)
         
-        # Try exact match first
-        key = f"{city_name}_{normalized_country}"
-        if key in self.cities_cache:
-            city_data = self.cities_cache[key]
-            return (city_data['latitude'], city_data['longitude'])
-        
-        # Try case-insensitive search
-        for key, city_data in self.cities_cache.items():
+        # Search through all cities in the list
+        matches = []
+        for city_data in self.cities_list:
             if (city_data['city'].lower() == city_name.lower() and 
                 city_data['country'].lower() == normalized_country.lower()):
-                return (city_data['latitude'], city_data['longitude'])
+                # If state is specified, filter by state
+                if state_name:
+                    if city_data.get('state') and city_data['state'].lower() == state_name.lower():
+                        return (city_data['latitude'], city_data['longitude'])
+                else:
+                    matches.append(city_data)
+        
+        # If we have matches but no state was specified, return the most populous one
+        if matches and not state_name:
+            matches.sort(key=lambda x: x.get('population', 0), reverse=True)
+            return (matches[0]['latitude'], matches[0]['longitude'])
         
         return None
     
@@ -136,9 +167,9 @@ class LocationService:
         normalized = country_mappings.get(country_name.lower(), country_name)
         return normalized
     
-    def validate_location(self, city_name: str, country_name: str) -> bool:
-        """Check if a city/country combination exists in our data"""
-        return self.get_city_coordinates(city_name, country_name) is not None
+    def validate_location(self, city_name: str, country_name: str, state_name: Optional[str] = None) -> bool:
+        """Check if a city/country/state combination exists in our data"""
+        return self.get_city_coordinates(city_name, country_name, state_name) is not None
     
     def get_all_countries(self) -> List[str]:
         """Get all available countries"""
@@ -165,15 +196,15 @@ def get_country_suggestions(query: str, limit: int = 20) -> List[str]:
     service = get_location_service()
     return service.search_countries(query, limit)
 
-def validate_location(city_name: str, country_name: str) -> bool:
-    """Validate if city and country combination exists in our data"""
+def validate_location(city_name: str, country_name: str, state_name: Optional[str] = None) -> bool:
+    """Validate if city/country/state combination exists in our data"""
     service = get_location_service()
-    return service.validate_location(city_name, country_name)
+    return service.validate_location(city_name, country_name, state_name)
 
-def get_coordinates(city_name: str, country_name: str) -> Optional[Tuple[float, float]]:
-    """Get coordinates for a valid city/country combination"""
+def get_coordinates(city_name: str, country_name: str, state_name: Optional[str] = None) -> Optional[Tuple[float, float]]:
+    """Get coordinates for a valid city/country/state combination"""
     service = get_location_service()
-    return service.get_city_coordinates(city_name, country_name)
+    return service.get_city_coordinates(city_name, country_name, state_name)
 
 def get_all_countries() -> List[str]:
     """Get all valid countries"""

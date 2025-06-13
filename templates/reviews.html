@@ -279,6 +279,11 @@
         <a href="/">Map</a>
         <a href="/upload">Upload Review</a>
         <a href="/reviews">All Reviews</a>
+        {% if is_admin %}
+        <a href="#" onclick="logout(); return false;" style="background-color: #e74c3c;">Logout</a>
+        {% else %}
+        <a href="/admin/login" style="background-color: #95a5a6;">Admin</a>
+        {% endif %}
     </div>
 
     <div class="container">
@@ -351,6 +356,69 @@
     <script>
         let currentReviews = [];
         let selectedIndex = -1;
+        const isAdmin = {{ 'true' if is_admin else 'false' }};
+        
+        // Logout function
+        async function logout() {
+            try {
+                await fetch('/api/admin/logout', { method: 'POST' });
+                window.location.reload();
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+        
+        // Handle edit review click
+        async function handleEditReview(reviewId) {
+            // Check if user is authenticated
+            try {
+                const response = await fetch('/api/admin/check');
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    // User is admin, go to edit page
+                    window.location.href = `/admin/edit?id=${reviewId}`;
+                } else {
+                    // User is not admin, redirect to login with return URL
+                    const returnUrl = encodeURIComponent(`/admin/edit?id=${reviewId}`);
+                    window.location.href = `/admin/login?next=${returnUrl}`;
+                }
+            } catch (error) {
+                console.error('Error checking auth status:', error);
+                // On error, redirect to login
+                const returnUrl = encodeURIComponent(`/admin/edit?id=${reviewId}`);
+                window.location.href = `/admin/login?next=${returnUrl}`;
+            }
+        }
+        
+        // Handle delete review (admin only)
+        async function handleDeleteReview(reviewId) {
+            if (!confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/reviews/${reviewId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert('Review deleted successfully');
+                    // Reload the current page to refresh the list
+                    window.location.reload();
+                } else if (response.status === 401) {
+                    // Not authenticated, redirect to login
+                    const returnUrl = encodeURIComponent(window.location.href);
+                    window.location.href = `/admin/login?next=${returnUrl}`;
+                } else {
+                    const error = await response.json();
+                    alert('Error deleting review: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error deleting review:', error);
+                alert('An error occurred while deleting the review');
+            }
+        }
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', () => {
@@ -599,6 +667,12 @@
                     <div style="margin-top: 0.5rem; font-size: 0.9rem; color: #7f8c8d;">
                         ${review.source ? `Source: ${review.source}` : ''}
                         ${review.original_post_url ? ` • <a href="${review.original_post_url}" target="_blank" class="clickable">Original Post</a>` : ''}
+                        <span style="margin: 0 0.5rem;">•</span>
+                        <a href="#" onclick="handleEditReview(${review.id}); return false;" style="color: #3498db; text-decoration: none;">Edit</a>
+                        ${isAdmin ? `
+                            <span style="margin: 0 0.5rem;">•</span>
+                            <a href="#" onclick="handleDeleteReview(${review.id}); return false;" style="color: #e74c3c; text-decoration: none;">Delete</a>
+                        ` : ''}
                     </div>
                     
                     ${review.assets && review.assets.length > 0 ? `

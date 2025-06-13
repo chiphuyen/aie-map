@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Cluster Count</title>
+    <script>
+        // Simulate the cluster counting logic
+        function testClusterCounting() {
+            // Simulate markers with bookData
+            const markers = [
+                { options: { bookData: { city_name: "Springfield", review_count: 2 } } },
+                { options: { bookData: { city_name: "San Francisco", review_count: 1 } } },
+                { options: { bookData: { city_name: "Washington", review_count: 1 } } },
+                { options: { bookData: { city_name: "Chicago", review_count: 1 } } },
+                { options: { bookData: { city_name: "London", review_count: 1 } } },
+                { options: { bookData: { city_name: "Amsterdam", review_count: 1 } } },
+                { options: { bookData: { city_name: "Bologna", review_count: 1 } } },
+                { options: { bookData: { city_name: "Charleston", review_count: 1 } } },
+                { options: { bookData: { city_name: "Pittsburgh", review_count: 1 } } }
+            ];
+
+            // Old method: just count markers
+            const oldCount = markers.length;
+            console.log("Old method (counting markers):", oldCount);
+
+            // New method: sum review counts
+            let totalReviews = 0;
+            markers.forEach(marker => {
+                if (marker.options && marker.options.bookData && marker.options.bookData.review_count) {
+                    totalReviews += marker.options.bookData.review_count;
+                }
+            });
+            console.log("New method (summing reviews):", totalReviews);
+
+            document.getElementById("result").innerHTML = `
+                <h2>Cluster Counting Test</h2>
+                <p><strong>Old method (counting markers):</strong> ${oldCount} markers</p>
+                <p><strong>New method (summing reviews):</strong> ${totalReviews} reviews</p>
+                <p>Springfield has 2 reviews but only 1 marker, which explains the difference.</p>
+            `;
+        }
+    </script>
+</head>
+<body onload="testClusterCounting()">
+    <div id="result"></div>
+</body>
+</html>

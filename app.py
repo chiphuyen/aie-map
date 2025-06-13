@@ -1,11 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Cookie, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from starlette.requests import Request
-from models import Base, Book, City, Review, ReviewAsset, ReviewCreate, ReviewResponse, CityStats
+from models import Base, Book, City, Review, ReviewAsset, ReviewCreate, ReviewResponse, CityStats, AdminSession
 from comprehensive_location_data import validate_location, get_coordinates, get_city_suggestions, get_country_suggestions, get_all_countries
 from typing import List, Optional, Union
 import os
@@ -16,6 +16,11 @@ import requests
 import pytesseract
 from PIL import Image
 import uuid
+from auth import (
+    verify_password, check_rate_limit, record_login_attempt, 
+    create_session, get_session, delete_session, clean_expired_sessions,
+    get_client_ip, SESSION_COOKIE_NAME
+)
 
 app = FastAPI(title="AIE Map", description="Track book reviews on a world map")
 
@@ -42,6 +47,29 @@ def get_db():
     finally:
         db.close()
 
+def get_current_admin(
+    request: Request,
+    session_id: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
+    db: Session = Depends(get_db)
+) -> Optional[AdminSession]:
+    """Get current admin session if authenticated"""
+    if not session_id:
+        return None
+    
+    session = get_session(db, session_id)
+    return session
+
+def require_admin(
+    session: Optional[AdminSession] = Depends(get_current_admin)
+) -> AdminSession:
+    """Require admin authentication"""
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    return session
+
 def init_default_data(db: Session):
     """Initialize default books if they don't exist"""
     if db.query(Book).count() == 0:
@@ -59,8 +87,11 @@ async def startup_event():
     db.close()
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+async def home(request: Request, admin_session: Optional[AdminSession] = Depends(get_current_admin)):
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "is_admin": admin_session is not None
+    })
 
 @app.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request, db: Session = Depends(get_db)):
@@ -82,15 +113,21 @@ async def get_city_suggestions_api(q: str = "", db: Session = Depends(get_db)):
         City.name.ilike(f"%{q}%")
     ).limit(10).all()
     
-    db_suggestions = [
-        {
+    db_suggestions = []
+    for city in db_cities:
+        # Build display name with state if available
+        display_parts = [city.name]
+        if city.state:
+            display_parts.append(city.state)
+        display_parts.append(city.country)
+        
+        db_suggestions.append({
             "city": city.name,
             "country": city.country,
-            "full_name": f"{city.name}, {city.country}",
+            "state": city.state,
+            "full_name": ", ".join(display_parts),
             "source": "database"
-        }
-        for city in db_cities
-    ]
+        })
     
     # Combine and deduplicate
     all_suggestions = predefined_suggestions + db_suggestions
@@ -98,7 +135,9 @@ async def get_city_suggestions_api(q: str = "", db: Session = Depends(get_db)):
     unique_suggestions = []
     
     for suggestion in all_suggestions:
-        key = f"{suggestion['city']}, {suggestion['country']}"
+        # Include state in deduplication key to allow same city name in different states
+        state_part = f", {suggestion.get('state')}" if suggestion.get('state') else ""
+        key = f"{suggestion['city']}{state_part}, {suggestion['country']}"
         if key not in seen:
             seen.add(key)
             unique_suggestions.append(suggestion)
@@ -118,6 +157,12 @@ async def get_all_countries_api():
     """Get all valid countries"""
     return get_all_countries()
 
+@app.get("/api/books")
+async def get_books(db: Session = Depends(get_db)):
+    """Get all books"""
+    books = db.query(Book).all()
+    return books
+
 @app.get("/api/map-data")
 async def get_map_data(db: Session = Depends(get_db)):
     """Get separate review data for each book type per city"""
@@ -125,12 +170,12 @@ async def get_map_data(db: Session = Depends(get_db)):
     # Debug: Check total reviews and cities
     total_reviews = db.query(Review).count()
     total_cities = db.query(City).count()
-    print(f"DEBUG: Total reviews: {total_reviews}, Total cities: {total_cities}")
     
     # Query to get separate entries for each book type per city
     query = db.query(
         City.name,
-        City.country, 
+        City.country,
+        City.state,
         City.latitude,
         City.longitude,
         Book.short_name,
@@ -148,6 +193,7 @@ async def get_map_data(db: Session = Depends(get_db)):
         {
             "city_name": row.name,
             "country": row.country,
+            "state": row.state,
             "latitude": float(row.latitude),
             "longitude": float(row.longitude),
             "book_short_name": row.short_name,
@@ -171,7 +217,10 @@ async def get_filtered_reviews(
     db: Session = Depends(get_db)
 ):
     """Get reviews with combined filters"""
-    print(f"DEBUG: Received params - book_id: {book_id}, city: {city}, country: {country}, company: {company}")
+    # Sanitize string inputs
+    city = city.strip() if city else None
+    country = country.strip() if country else None
+    company = company.strip() if company else None
     
     # Start with base query
     query = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
@@ -187,13 +236,13 @@ async def get_filtered_reviews(
             active_filters.append(f"Book: {book.title}")
     
     if city and country:
-        query = query.filter(City.name == city, City.country == country)
+        query = query.filter(func.lower(City.name) == city.lower(), func.lower(City.country) == country.lower())
         active_filters.append(f"Location: {city}, {country}")
     elif city:
-        query = query.filter(City.name == city)
+        query = query.filter(func.lower(City.name) == city.lower())
         active_filters.append(f"City: {city}")
     elif country:
-        query = query.filter(City.country == country)
+        query = query.filter(func.lower(City.country) == country.lower())
         active_filters.append(f"Country: {country}")
     
     if company:
@@ -215,6 +264,7 @@ async def get_filtered_reviews(
             "book_short_name": book.short_name,
             "city_name": city_obj.name,
             "country": city_obj.country,
+            "state": city_obj.state,
             "review_text": review.review_text,
             "reviewer_name": review.reviewer_name,
             "company": review.company,
@@ -252,6 +302,9 @@ async def get_filtered_reviews(
 @app.get("/api/autocomplete/cities")
 async def get_autocomplete_cities(query: Optional[str] = None, db: Session = Depends(get_db)):
     """Get cities for autocomplete based on reviews in database"""
+    # Sanitize input
+    query = query.strip() if query else None
+    
     # Get distinct cities from reviews
     cities_query = db.query(City.name, City.country).join(Review).distinct()
     
@@ -265,6 +318,9 @@ async def get_autocomplete_cities(query: Optional[str] = None, db: Session = Dep
 @app.get("/api/autocomplete/countries")
 async def get_autocomplete_countries(query: Optional[str] = None, db: Session = Depends(get_db)):
     """Get countries for autocomplete based on reviews in database"""
+    # Sanitize input
+    query = query.strip() if query else None
+    
     # Get distinct countries from reviews
     countries_query = db.query(City.country).join(Review).distinct()
     
@@ -278,6 +334,9 @@ async def get_autocomplete_countries(query: Optional[str] = None, db: Session = 
 @app.get("/api/autocomplete/companies")
 async def get_autocomplete_companies(query: Optional[str] = None, db: Session = Depends(get_db)):
     """Get companies for autocomplete based on reviews in database"""
+    # Sanitize input
+    query = query.strip() if query else None
+    
     # Get distinct companies from reviews
     companies_query = db.query(Review.company).filter(Review.company.isnot(None)).distinct()
     
@@ -289,9 +348,25 @@ async def get_autocomplete_companies(query: Optional[str] = None, db: Session = 
     return [{"name": company[0], "label": company[0]} for company in companies if company[0]]
 
 @app.get("/api/reviews/{city_name}")
-async def get_city_reviews(city_name: str, country: str, db: Session = Depends(get_db)):
+async def get_city_reviews(city_name: str, country: str, state: Optional[str] = None, db: Session = Depends(get_db)):
     """Get all reviews for a specific city"""
-    city = db.query(City).filter(City.name == city_name, City.country == country).first()
+    # Sanitize inputs
+    city_name = city_name.strip()
+    country = country.strip()
+    state = state.strip() if state else None
+    
+    # Case-insensitive search with optional state
+    query = db.query(City).filter(
+        func.lower(City.name) == func.lower(city_name),
+        func.lower(City.country) == func.lower(country)
+    )
+    
+    if state:
+        query = query.filter(func.lower(City.state) == func.lower(state))
+    else:
+        query = query.filter(City.state.is_(None))
+    
+    city = query.first()
     if not city:
         raise HTTPException(status_code=404, detail="City not found")
     
@@ -309,6 +384,7 @@ async def get_city_reviews(city_name: str, country: str, db: Session = Depends(g
             "book_short_name": review.Book.short_name,
             "city_name": city.name,
             "country": city.country,
+            "state": city.state,
             "review_text": review.Review.review_text,
             "reviewer_name": review.Review.reviewer_name,
             "company": review.Review.company,
@@ -334,30 +410,49 @@ async def get_city_reviews(city_name: str, country: str, db: Session = Depends(g
     return result
 
 
-def get_or_create_city(db: Session, city_name: str, country: str) -> City:
+def get_or_create_city(db: Session, city_name: str, country: str, state: Optional[str] = None) -> City:
     """Get existing city or create new one with comprehensive geocoding"""
-    city = db.query(City).filter(City.name == city_name, City.country == country).first()
+    # Input is already sanitized by Pydantic validator
+    # Build query with optional state
+    # We need to be precise about state matching to handle cities with same name
+    if state:
+        # If state is provided, look for exact match including state
+        city = db.query(City).filter(
+            func.lower(City.name) == city_name.lower(), 
+            func.lower(City.country) == country.lower(),
+            func.lower(City.state) == state.lower()
+        ).first()
+    else:
+        # If no state provided, look for entry without state
+        city = db.query(City).filter(
+            func.lower(City.name) == city_name.lower(), 
+            func.lower(City.country) == country.lower(),
+            City.state.is_(None)
+        ).first()
     
     if not city:
         # Try multiple sources for coordinates:
         # 1. Comprehensive geonames database
-        coords = get_coordinates(city_name, country)
+        coords = get_coordinates(city_name, country, state)
         
         # 2. Fallback to Nominatim API for any location
         if not coords:
-            coords = geocode_city_api(city_name, country)
+            coords = geocode_city_api(city_name, country, state)
         
         if not coords:
+            location_str = f"{city_name}, {state}, {country}" if state else f"{city_name}, {country}"
             raise HTTPException(
                 status_code=400, 
-                detail=f"Could not find coordinates for '{city_name}, {country}'. Please check the spelling and try again, or verify this location exists."
+                detail=f"Could not find coordinates for '{location_str}'. Please check the spelling and try again, or verify this location exists."
             )
         
-        print(f"DEBUG: Creating new city: {city_name}, {country} at {coords}")
+        location_str = f"{city_name}, {state}, {country}" if state else f"{city_name}, {country}"
+        print(f"DEBUG: Creating new city: {location_str} at {coords}")
         
         city = City(
             name=city_name,
             country=country,
+            state=state,
             latitude=coords[0],
             longitude=coords[1]
         )
@@ -367,12 +462,18 @@ def get_or_create_city(db: Session, city_name: str, country: str) -> City:
     
     return city
 
-def geocode_city_api(city_name: str, country: str) -> Optional[tuple]:
+def geocode_city_api(city_name: str, country: str, state: Optional[str] = None) -> Optional[tuple]:
     """Get coordinates using Nominatim API for any city"""
     try:
         url = "https://nominatim.openstreetmap.org/search"
+        # Build query with optional state
+        query_parts = [city_name]
+        if state:
+            query_parts.append(state)
+        query_parts.append(country)
+        
         params = {
-            "q": f"{city_name}, {country}",
+            "q": ", ".join(query_parts),
             "format": "json",
             "limit": 1
         }
@@ -396,7 +497,7 @@ async def create_review(review_data: ReviewCreate, file_path: Optional[str] = No
     
     print(f"DEBUG: Found book: {book.title}")
     
-    city = get_or_create_city(db, review_data.city_name, review_data.country)
+    city = get_or_create_city(db, review_data.city_name, review_data.country, review_data.state)
     print(f"DEBUG: City: {city.name}, {city.country} (ID: {city.id})")
     
     # Parse date if provided
@@ -581,12 +682,19 @@ async def get_reviews_by_book(book_id: int, db: Session = Depends(get_db)):
 @app.get("/api/reviews/by-location")
 async def get_reviews_by_location(city: Optional[str] = None, country: Optional[str] = None, db: Session = Depends(get_db)):
     """Get all reviews for a specific city/country or country only"""
+    # Sanitize inputs
+    city = city.strip() if city else None
+    country = country.strip() if country else None
+    
     if not city and not country:
         raise HTTPException(status_code=400, detail="Either city or country must be provided")
     
     # If both city and country are provided, filter by specific city
     if city and country:
-        city_obj = db.query(City).filter(City.name == city, City.country == country).first()
+        city_obj = db.query(City).filter(
+            func.lower(City.name) == func.lower(city),
+            func.lower(City.country) == func.lower(country)
+        ).first()
         if not city_obj:
             raise HTTPException(status_code=404, detail="City not found")
         
@@ -606,7 +714,7 @@ async def get_reviews_by_location(city: Optional[str] = None, country: Optional[
     elif country:
         reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
                     .join(City, Review.city_id == City.id)\
-                    .filter(City.country == country).all()
+                    .filter(func.lower(City.country) == func.lower(country)).all()
         
         if not reviews:
             raise HTTPException(status_code=404, detail="No reviews found for this country")
@@ -620,7 +728,7 @@ async def get_reviews_by_location(city: Optional[str] = None, country: Optional[
     else:  # city but no country
         reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
                     .join(City, Review.city_id == City.id)\
-                    .filter(City.name == city).all()
+                    .filter(func.lower(City.name) == func.lower(city)).all()
         
         if not reviews:
             raise HTTPException(status_code=404, detail="No reviews found for this city")
@@ -641,6 +749,7 @@ async def get_reviews_by_location(city: Optional[str] = None, country: Optional[
             "book_short_name": book.short_name,
             "city_name": city_obj.name,
             "country": city_obj.country,
+            "state": city_obj.state,
             "review_text": review.review_text,
             "reviewer_name": review.reviewer_name,
             "company": review.company,
@@ -672,6 +781,9 @@ async def get_reviews_by_location(city: Optional[str] = None, country: Optional[
 @app.get("/api/reviews/by-company/{company_name}")
 async def get_reviews_by_company(company_name: str, db: Session = Depends(get_db)):
     """Get all reviews for a specific company"""
+    # Sanitize input
+    company_name = company_name.strip()
+    
     reviews = db.query(Review, Book, City).join(Book, Review.book_id == Book.id)\
                 .join(City, Review.city_id == City.id)\
                 .filter(Review.company.ilike(f"%{company_name}%")).all()
@@ -721,7 +833,9 @@ async def get_reviews_by_company(company_name: str, db: Session = Depends(get_db
 
 @app.get("/reviews", response_class=HTMLResponse)
 async def reviews_page(request: Request, book_id: Optional[int] = None, city: Optional[str] = None, 
-                      country: Optional[str] = None, company: Optional[str] = None, db: Session = Depends(get_db)):
+                      country: Optional[str] = None, company: Optional[str] = None, 
+                      admin_session: Optional[AdminSession] = Depends(get_current_admin),
+                      db: Session = Depends(get_db)):
     """Reviews listing page with optional filters"""
     books = db.query(Book).all()
     return templates.TemplateResponse("reviews.html", {
@@ -730,8 +844,183 @@ async def reviews_page(request: Request, book_id: Optional[int] = None, city: Op
         "book_id": book_id,
         "city": city,
         "country": country,
-        "company": company
+        "company": company,
+        "is_admin": admin_session is not None
     })
+
+# Authentication endpoints
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page(request: Request):
+    """Display admin login page"""
+    return templates.TemplateResponse("admin_login.html", {"request": request})
+
+@app.get("/admin/edit", response_class=HTMLResponse)
+async def edit_review_page(
+    request: Request,
+    admin: AdminSession = Depends(require_admin)
+):
+    """Display review edit page (admin only)"""
+    return templates.TemplateResponse("edit_review.html", {"request": request})
+
+@app.post("/api/admin/login")
+async def admin_login(
+    request: Request,
+    response: Response,
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Admin login endpoint"""
+    ip_address = get_client_ip(request)
+    
+    # Check rate limiting
+    if not check_rate_limit(ip_address):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again later."
+        )
+    
+    # Verify password
+    if not verify_password(password):
+        record_login_attempt(ip_address, False)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password"
+        )
+    
+    # Create session
+    record_login_attempt(ip_address, True)
+    session_id = create_session(db, ip_address)
+    
+    # Set secure cookie
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        httponly=True,
+        secure=False,  # Set to True in production with HTTPS
+        samesite="lax",
+        max_age=60 * 60 * 24  # 24 hours
+    )
+    
+    return {"message": "Login successful"}
+
+@app.post("/api/admin/logout")
+async def admin_logout(
+    response: Response,
+    session: Optional[AdminSession] = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin logout endpoint"""
+    if session:
+        delete_session(db, session.id)
+    
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return {"message": "Logout successful"}
+
+@app.get("/api/admin/check")
+async def check_admin_status(
+    session: Optional[AdminSession] = Depends(get_current_admin)
+):
+    """Check if user is authenticated as admin"""
+    return {"authenticated": session is not None}
+
+# Review editing endpoints (protected)
+@app.put("/api/reviews/{review_id}")
+async def update_review(
+    review_id: int,
+    review_data: ReviewCreate,
+    admin: AdminSession = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Update an existing review (admin only)"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # Update city if location changed
+    city = get_or_create_city(db, review_data.city_name, review_data.country, review_data.state)
+    
+    # Update review fields
+    review.book_id = review_data.book_id
+    review.city_id = city.id
+    review.review_text = review_data.review_text
+    review.reviewer_name = review_data.reviewer_name
+    review.company = review_data.company
+    review.role = review_data.role
+    review.original_post_url = review_data.original_post_url
+    review.social_media_url = review_data.social_media_url
+    review.source = review_data.source
+    
+    # Parse and update date if provided
+    if review_data.review_date:
+        try:
+            review.review_date = parser.parse(review_data.review_date).date()
+        except:
+            pass
+    
+    db.commit()
+    db.refresh(review)
+    
+    return {"message": "Review updated successfully", "id": review.id}
+
+@app.delete("/api/reviews/{review_id}")
+async def delete_review(
+    review_id: int,
+    admin: AdminSession = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a review (admin only)"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    db.delete(review)
+    db.commit()
+    
+    return {"message": "Review deleted successfully"}
+
+@app.get("/api/review/{review_id}")
+async def get_single_review(
+    review_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get a single review by ID"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    book = db.query(Book).filter(Book.id == review.book_id).first()
+    city = db.query(City).filter(City.id == review.city_id).first()
+    assets = db.query(ReviewAsset).filter(ReviewAsset.review_id == review.id).all()
+    
+    return {
+        "id": review.id,
+        "book_id": review.book_id,
+        "book_title": book.title,
+        "book_short_name": book.short_name,
+        "city_name": city.name,
+        "country": city.country,
+        "state": city.state,
+        "review_text": review.review_text,
+        "reviewer_name": review.reviewer_name,
+        "company": review.company,
+        "role": review.role,
+        "review_date": review.review_date.isoformat() if review.review_date else None,
+        "created_at": review.created_at,
+        "original_post_url": review.original_post_url,
+        "social_media_url": review.social_media_url,
+        "source": review.source,
+        "assets": [
+            {
+                "id": asset.id,
+                "file_path": asset.file_path,
+                "file_name": asset.file_name,
+                "file_type": asset.file_type,
+                "file_size": asset.file_size,
+                "created_at": asset.created_at
+            }
+            for asset in assets
+        ]
+    }
 
 if __name__ == "__main__":
     import uvicorn

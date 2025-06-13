@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - AIE Map</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-container {
+            background: white;
+            border-radius: 10px;
+            padding: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .login-header h1 {
+            color: #2c3e50;
+            margin: 0;
+            font-size: 2rem;
+        }
+        .login-header p {
+            color: #7f8c8d;
+            margin: 0.5rem 0 0 0;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: #34495e;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        .btn {
+            width: 100%;
+            background-color: #3498db;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .error-message {
+            background-color: #e74c3c;
+            color: white;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+        .success-message {
+            background-color: #27ae60;
+            color: white;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+        .back-link a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>Admin Login</h1>
+            <p>Enter password to access admin features</p>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        <div class="success-message" id="successMessage"></div>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autofocus>
+            </div>
+            
+            <button type="submit" class="btn" id="loginButton">Login</button>
+            
+            <div class="loading" id="loading">
+                <p>Logging in...</p>
+            </div>
+        </form>
+        
+        <div class="back-link">
+            <a href="/">← Back to Map</a>
+        </div>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('loginForm');
+        const passwordInput = document.getElementById('password');
+        const loginButton = document.getElementById('loginButton');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const loading = document.getElementById('loading');
+        
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Reset messages
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+            
+            // Show loading state
+            loginButton.disabled = true;
+            loading.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('password', passwordInput.value);
+            
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    successMessage.textContent = 'Login successful! Redirecting...';
+                    successMessage.style.display = 'block';
+                    
+                    // Check if there's a redirect URL
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const next = urlParams.get('next') || '/';
+                    
+                    setTimeout(() => {
+                        window.location.href = next;
+                    }, 1000);
+                } else {
+                    if (response.status === 429) {
+                        errorMessage.textContent = 'Too many login attempts. Please try again later.';
+                    } else {
+                        errorMessage.textContent = data.detail || 'Invalid password';
+                    }
+                    errorMessage.style.display = 'block';
+                    passwordInput.value = '';
+                    passwordInput.focus();
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                errorMessage.textContent = 'An error occurred. Please try again.';
+                errorMessage.style.display = 'block';
+            } finally {
+                loginButton.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+        
+        // Focus on password field
+        passwordInput.focus();
+    </script>
+</body>
+</html>

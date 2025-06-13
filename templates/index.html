@@ -180,14 +180,19 @@
 </head>
 <body>
     <div class="header">
-        <h1>AIE Map</h1>
-        <p>Track book reviews around the world</p>
+        <!-- <h1>MVAIE Reviews</h1> -->
+        <p>What people are saying about <i>Designing Machine Learning Systems</i> (2022) and <i>AI Engineering</i> (2025)</p>
     </div>
     
     <div class="nav">
         <a href="/">Map</a>
         <a href="/upload">Upload Review</a>
         <a href="/reviews">All Reviews</a>
+        {% if is_admin %}
+        <a href="#" onclick="logout(); return false;" style="background-color: #e74c3c;">Logout</a>
+        {% else %}
+        <a href="/admin/login" style="background-color: #95a5a6;">Admin</a>
+        {% endif %}
     </div>
 
     <div id="map"></div>
@@ -204,6 +209,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
     <script>
+        const isAdmin = {{ 'true' if is_admin else 'false' }};
+        
         // Initialize map
         const map = L.map('map').setView([20, 0], 2);
         
@@ -219,18 +226,28 @@
             zoomToBoundsOnClick: true,
             maxClusterRadius: 80,
             iconCreateFunction: function(cluster) {
-                const childCount = cluster.getChildCount();
+                // Sum up all review counts from child markers
+                const childMarkers = cluster.getAllChildMarkers();
+                let totalReviews = 0;
+                
+                childMarkers.forEach(marker => {
+                    // Extract review count from marker's data
+                    if (marker.options && marker.options.bookData && marker.options.bookData.review_count) {
+                        totalReviews += marker.options.bookData.review_count;
+                    }
+                });
+                
                 let c = ' marker-cluster-';
-                if (childCount < 10) {
+                if (totalReviews < 10) {
                     c += 'small';
-                } else if (childCount < 100) {
+                } else if (totalReviews < 100) {
                     c += 'medium';
                 } else {
                     c += 'large';
                 }
                 
                 return new L.DivIcon({
-                    html: `<div><span>${childCount}</span></div>`,
+                    html: `<div><span>${totalReviews}</span></div>`,
                     className: 'marker-cluster' + c,
                     iconSize: new L.Point(40, 40)
                 });
@@ -252,7 +269,6 @@
         legend.onAdd = function (map) {
             const div = L.DomUtil.create('div', 'legend');
             div.innerHTML = `
-                <h4>Book Reviews</h4>
                 <div class="legend-item">
                     <div class="legend-color" style="background-color: #FF0000;"></div>
                     <a href="/reviews?book_id=1" style="color: black; text-decoration: none;">AI Engineering</a>
@@ -336,7 +352,10 @@
                         
                         const marker = L.marker(
                             [lat, lng],
-                            { icon: createBookMarker(bookData) }
+                            { 
+                                icon: createBookMarker(bookData),
+                                bookData: bookData  // Store the book data for cluster counting
+                            }
                         );
                         
                         // Add tooltip showing book and count
@@ -346,7 +365,7 @@
                         );
                         
                         marker.on('click', () => {
-                            showCityReviews(bookData.city_name, bookData.country);
+                            showCityReviews(bookData.city_name, bookData.country, bookData.state);
                         });
                         
                         markers.addLayer(marker);
@@ -360,16 +379,23 @@
         }
 
         // Function to show city reviews
-        async function showCityReviews(cityName, country) {
+        async function showCityReviews(cityName, country, state) {
             try {
-                const response = await fetch(`/api/reviews/${cityName}?country=${encodeURIComponent(country)}`);
+                let url = `/api/reviews/${cityName}?country=${encodeURIComponent(country)}`;
+                if (state) {
+                    url += `&state=${encodeURIComponent(state)}`;
+                }
+                const response = await fetch(url);
                 const reviews = await response.json();
                 
                 const panel = document.getElementById('infoPanel');
                 const title = document.getElementById('panelTitle');
                 const content = document.getElementById('panelContent');
                 
-                title.textContent = `Reviews in ${cityName}, ${country}`;
+                const locationParts = [cityName];
+                if (state) locationParts.push(state);
+                locationParts.push(country);
+                title.textContent = `Reviews in ${locationParts.join(', ')}`;
                 
                 if (reviews.length === 0) {
                     content.innerHTML = '<p>No reviews found for this city.</p>';
@@ -452,6 +478,16 @@
                          .replace(/\r/g, '<br>');
         }
 
+        // Logout function
+        async function logout() {
+            try {
+                await fetch('/api/admin/logout', { method: 'POST' });
+                window.location.reload();
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+        
         // Load data when page loads
         document.addEventListener('DOMContentLoaded', loadMapData);
     </script>

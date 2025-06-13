@@ -13,9 +13,10 @@ CREATE TABLE cities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(255) NOT NULL,
     country VARCHAR(255) NOT NULL,
+    state VARCHAR(255), -- State/Province/Region (optional)
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL,
-    UNIQUE(name, country)
+    UNIQUE(name, country, state)
 );
 
 -- Reviews table
@@ -47,6 +48,15 @@ CREATE TABLE review_assets (
     file_size INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+);
+
+-- Admin sessions table for authentication
+CREATE TABLE admin_sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45)
 );
 
 -- Insert default books
