@@ -1,12 +1,15 @@
 services:
   - type: web
     name: aie-map
+    plan: free
     runtime: python
     buildCommand: "./build.sh"
     startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.16
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
     disk:
       name: data
       mountPath: /app/data

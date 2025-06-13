@@ -1,0 +1,11 @@
+{
+  "name": "aie-map",
+  "version": "1.0.0",
+  "description": "AIE Map - Book Review Tracker",
+  "scripts": {
+    "start": "pip3 install -r requirements.txt && python3 app.py"
+  },
+  "engines": {
+    "node": "16.x"
+  }
+}

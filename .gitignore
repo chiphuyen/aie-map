@@ -196,3 +196,10 @@ cython_debug/
 # Project-specific data folder
 data/
 *.db
+
+# Security - never commit these
+.env
+.env.*
+secrets/
+*.key
+*.pem
