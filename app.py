@@ -25,7 +25,7 @@ from auth import (
 app = FastAPI(title="AIE Map", description="Track book reviews on a world map")
 
 # Database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./aie_map.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./data/aie_map.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -38,7 +38,8 @@ templates = Jinja2Templates(directory="templates")
 # Create directories
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
-os.makedirs("uploads", exist_ok=True)
+os.makedirs("data", exist_ok=True)
+os.makedirs("data/uploads", exist_ok=True)
 
 def get_db():
     db = SessionLocal()
@@ -562,7 +563,7 @@ async def upload_screenshot(
     # Save uploaded file
     file_id = str(uuid.uuid4())
     file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-    file_path = f"uploads/{file_id}.{file_extension}"
+    file_path = f"data/uploads/{file_id}.{file_extension}"
     
     with open(file_path, "wb") as buffer:
         content = await file.read()

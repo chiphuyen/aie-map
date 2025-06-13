@@ -29,7 +29,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-**Database**: SQLite database (`aie_map.db`) is created automatically on first run
+**Database**: SQLite database (`data/aie_map.db`) is created automatically on first run
 
 **Development Server**: Runs on http://localhost:8000
 
@@ -40,7 +40,9 @@ python app.py
 - `database_schema.sql`: Database schema reference
 - `templates/`: HTML templates for web interface
 - `static/`: Static assets (created automatically)
-- `uploads/`: Screenshot uploads (created automatically)
+- `data/`: Data folder containing database and uploads (excluded from git)
+  - `data/aie_map.db`: SQLite database
+  - `data/uploads/`: Screenshot uploads
 
 ## External Dependencies
 
