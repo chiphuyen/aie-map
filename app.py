@@ -40,8 +40,13 @@ if os.getenv("RENDER"):
     # Try to create uploads directory, but don't fail if we can't
     try:
         os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
-    except PermissionError:
-        print(f"Warning: Could not create uploads directory at {DATA_DIR}/uploads")
+    except Exception as e:
+        print(f"Warning: Could not create uploads directory at {DATA_DIR}/uploads: {e}")
+        print("NOTE: File uploads will be lost on redeploy without persistent storage!")
+        # Fallback to temp directory
+        import tempfile
+        DATA_DIR = tempfile.gettempdir()
+        os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
 else:
     DATA_DIR = "./data"
     # Locally, create both directories
@@ -49,8 +54,26 @@ else:
     os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
 
 # Database setup
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/aie_map.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+# Use PostgreSQL on Render, SQLite locally
+if os.getenv("DATABASE_URL"):
+    # PostgreSQL for production
+    SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+    # Handle postgres:// vs postgresql:// URL scheme
+    if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    # PostgreSQL with connection pooling
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,  # Verify connections before using
+        pool_recycle=300  # Recycle connections after 5 minutes
+    )
+else:
+    # SQLite for local development
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/aie_map.db"
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base.metadata.create_all(bind=engine)
@@ -583,9 +606,15 @@ async def upload_screenshot(
     file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
     file_path = f"{DATA_DIR}/uploads/{file_id}.{file_extension}"
     
+    # Ensure uploads directory exists (might be needed on Render after restart)
+    os.makedirs(f"{DATA_DIR}/uploads", exist_ok=True)
+    
     with open(file_path, "wb") as buffer:
         content = await file.read()
         buffer.write(content)
+    
+    # WARNING: On Render, uploaded files are temporary and will be lost on restart
+    # Consider using cloud storage (S3, Cloudinary) for production file persistence
     
     # Get file size
     file_size = os.path.getsize(file_path)

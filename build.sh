@@ -19,5 +19,5 @@ python -m pip install --upgrade pip setuptools wheel
 # Use --prefer-binary to avoid building from source
 pip install --prefer-binary -r requirements.txt
 
-# Create data directories
-mkdir -p data/uploads
+# Note: Directory creation is handled by the app itself based on environment
+echo "Build completed successfully"
