@@ -9,7 +9,15 @@ services:
         value: "3.11"
       - key: ADMIN_PASSWORD_HASH
         sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aie-map-postgres
+          property: internalConnectionString
     disk:
       name: data
       mountPath: /app/data
       sizeGB: 1
+
+databases:
+  - name: aie-map-postgres
+    plan: free
