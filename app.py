@@ -35,7 +35,11 @@ os.makedirs("templates", exist_ok=True)
 # Determine data directory based on environment
 # Render mounts disk at /app/data, locally we use ./data
 if os.getenv("RENDER"):
-    # On Render, the disk is mounted at /app/data
+    # On Render, set Tesseract path and data directory
+    os.environ["PATH"] = "/usr/bin:" + os.environ.get("PATH", "")
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+    
+    # The disk is mounted at /app/data
     DATA_DIR = "/app/data"
     # Try to create uploads directory, but don't fail if we can't
     try:
